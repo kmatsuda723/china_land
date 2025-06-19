@@ -537,7 +537,7 @@ plot!(a, kfun0[1, 7, :, 1], color=:black, linestyle=:solid, linewidth=2, label=L
 plot!(a, kfun0[1, 1, :, 2], color=:blue, linestyle=:dash, linewidth=2, label=L"cg,l_{mid}")
 plot!(a, kfun0[1, 4, :, 2], color=:red, linestyle=:dash, linewidth=2, label=L"cg,l_{mid}")
 plot!(a, kfun0[1, 7, :, 2], color=:black, linestyle=:dash, linewidth=2, label=L"cg,l_{high}")
-savefig("fig_kfun.pdf")
+savefig("figures/fig_kfun.pdf")
 
 plot(a, pplus[1, 4, :, 1, 1], color=:blue, linestyle=:solid, linewidth=2, label=L"hs,l_{low}",
     title="Policy function", xlabel=L"a", ylabel=L"a'=g(a,l)", xlims=(-3, 10), ylims=(0, 5), legend=:topleft)
@@ -546,7 +546,7 @@ plot!(a, pplus[1, 4, :, 1, 3], color=:black, linestyle=:solid, linewidth=2, labe
 plot!(a, pplus[1, 4, :, 1, 4], color=:blue, linestyle=:dash, linewidth=2, label=L"cg,l_{mid}")
 # plot!(a, pplus[1, 4, :, 2], color=:red, linestyle=:dash, linewidth=2, label=L"cg,l_{mid}")
 # plot!(a, pplus[1, 7, :, 2], color=:black, linestyle=:dash, linewidth=2, label=L"cg,l_{high}")
-savefig("fig_sfun.pdf")
+savefig("figures/fig_sfun.pdf")
 
 
 
