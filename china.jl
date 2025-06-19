@@ -12,105 +12,25 @@ using LaTeXStrings
 using Parameters # enable @unpack
 Random.seed!(1234)  # シードを固定
 
-# test
-
-function tauchen(N, rho, sigma, param)
-    """
-    ---------------------------------------------------
-    === AR(1)過程をtauchenの手法によって離散化する関数 ===
-    ---------------------------------------------------
-    ※z'= ρ*z + ε, ε~N(0,σ_{ε}^2) を離散化する
-
-    <input>
-    ・N: 離散化するグリッドの数
-    ・rho: AR(1)過程の慣性(上式のρ)
-    ・sigma: AR(1)過程のショック項の標準偏差(上式のσ_{ε})
-    ・m: 離散化するグリッドの範囲に関するパラメータ
-    <output>
-    ・Z: 離散化されたグリッド
-    ・Zprob: 各グリッドの遷移行列
-    ・Zinv: Zの定常分布
-    """
-    Zprob = zeros(N, N) # 遷移確率の行列
-    Zinv = zeros(N, 1)  # 定常分布
-
-    # 等間隔のグリッドを定める
-    # 最大値と最小値
-    zmax = param * sqrt(sigma^2 / (1 - rho^2))
-    zmin = -zmax
-    # グリッド間の間隔
-    w = (zmax - zmin) / (N - 1)
-
-    Z = collect(range(zmin, zmax, length=N))
-
-    # グリッド所与として遷移確率を求める
-    for j in 1:N # 今期のZのインデックス
-        for jp in 1:N  # 来期のZのインデックス
-            if jp == 1
-                Zprob[j, jp] = cdf_normal((Z[jp] - rho * Z[j] + w / 2) / sigma)
-            elseif jp == N
-                Zprob[j, jp] = 1 - cdf_normal((Z[jp] - rho * Z[j] - w / 2) / sigma)
-            else
-                Zprob[j, jp] = cdf_normal((Z[jp] - rho * Z[j] + w / 2) / sigma) - cdf_normal((Z[jp] - rho * Z[j] - w / 2) / sigma)
-            end
-        end
-    end
-
-    # 定常分布を求める
-    dist0 = (1 / N) .* ones(N)
-    dist1 = copy(dist0)
-
-    err = 1.0
-    errtol = 1e-8
-    iter = 1
-    while err > errtol
-
-        dist1 = Zprob' * dist0
-        err = sum(abs.(dist0 - dist1))
-        dist0 = copy(dist1)
-        iter += 1
-
-    end
-
-    Zinv = copy(dist1)
-
-    return Z, Zprob, Zinv
-
-end
+include("toolbox.jl")
 
 
-function cdf_normal(x)
-    """
-    --------------------------------
-    === 標準正規分布の累積分布関数 ===
-    --------------------------------
-    <input>
-    ・x: 
-    <output>
-    ・c: 標準正規分布にしたがう確率変数Xがx以下である確率
-    """
-    d = Normal(0, 1) # 標準正規分布
-    c = cdf(d, x)
 
-    return c
+# function interp(x, grid)
+#     # Find indices of the closest grids and the weights for linear interpolation
+#     ial = searchsortedlast(grid, x)  # Index of the grid just above or equal to x
+#     ial = max(1, ial)  # Ensure index iz within bounds
 
-end
+#     if ial > length(grid) - 1
+#         ial = length(grid) - 1  # Handle case where x iz beyond the grid
+#     end
 
-function interp(x, grid)
-    # Find indices of the closest grids and the weights for linear interpolation
-    ial = searchsortedlast(grid, x)  # Index of the grid just above or equal to x
-    ial = max(1, ial)  # Ensure index iz within bounds
+#     iar = ial + 1  # The index just below ial
 
-    if ial > length(grid) - 1
-        ial = length(grid) - 1  # Handle case where x iz beyond the grid
-    end
-
-    iar = ial + 1  # The index just below ial
-
-    # Compute the weights for interpolation
-    varphi = (grid[iar] - x) / (grid[iar] - grid[ial])
-    return ial, iar, varphi
-end
+#     # Compute the weights for interpolation
+#     varphi = (grid[iar] - x) / (grid[iar] - grid[ial])
+#     return ial, iar, varphi
+# end
 
 
 function setParameters(;
@@ -125,7 +45,7 @@ function setParameters(;
     gamma_z=0.57,
     gamma_q=0.1,
     zeta=0.0,
-    r_land=1.04^30-1.0,
+    r_land=1.04^30 - 1.0,
     phi_a=0.5,
     phi_n=0.77,
     sigma_e=0.1,
@@ -187,7 +107,7 @@ end
 
 function log_hplus(logz, logq, logh, logxi, param)
     @unpack gamma_z, gamma_q, gamma_h = param
-    return gamma_z*logz + gamma_q*logq + gamma_h*logh + logxi
+    return gamma_z * logz + gamma_q * logq + gamma_h * logh + logxi
 end
 
 function set_prices(param, KL, land_lost, avg_income)
@@ -442,7 +362,7 @@ function aggregation(param, dec, measures, prices)
         end
     end
     meank = sum(sum(m .* aplus))
-    sum_A = mapslices(x -> sum(x), m; dims=(1,2,4))
+    sum_A = mapslices(x -> sum(x), m; dims=(1, 2, 4))
     # println(round.(sum_A; digits=2))
     # error("stop")
 
@@ -460,7 +380,8 @@ function aggregation(param, dec, measures, prices)
         mass_z=mass_z,
         mass_a=mass_a,
         mass_h=mass_h
-    )end
+    )
+end
 
 function get_Steadystate(param, icase)
 
@@ -539,23 +460,25 @@ function get_Steadystate(param, icase)
 
 end
 
-function sample_states_from_distribution(distribution_matrix, NN)
-    NI, NH, NA, NZ = size(distribution_matrix)  # Get the dimensions of the distribution matrix
+# function sample_states_from_distribution(distribution_matrix, NN)
+#     NI, NH, NA, NZ = size(distribution_matrix)  # Get the dimensions of the distribution matrix
 
-    # Flatten the distribution matrix into a 1D array of probabilities
-    distribution_flat = vec(distribution_matrix)
+#     # Flatten the distribution matrix into a 1D array of probabilities
+#     distribution_flat = vec(distribution_matrix)
 
-    # Create a list of possible states, corresponding to the positions in the distribution matrix
-    possible_states = [(ii, ih, ia, iz) for ii in 1:NI, ih in 1:NH, ia in 1:NA, iz in 1:NZ]
+#     # Create a list of possible states, corresponding to the positions in the distribution matrix
+#     possible_states = [(ii, ih, ia, iz) for ii in 1:NI, ih in 1:NH, ia in 1:NA, iz in 1:NZ]
 
-    # Sample initial states for each household based on the probabilities
-    sampled_indices = rand(Categorical(distribution_flat), NN)
+#     # Sample initial states for each household based on the probabilities
+#     sampled_indices = rand(Categorical(distribution_flat), NN)
 
-    # Map sampled indices back to household states (ih, iz, ia)
-    initial_states = [possible_states[idx] for idx in sampled_indices]
+#     # Map sampled indices back to household states (ih, iz, ia)
+#     initial_states = [possible_states[idx] for idx in sampled_indices]
 
-    return initial_states
-end
+#     return initial_states
+# end
+
+
 
 function monte_carlo_simulation(param, dec, measures, prices, NN)
     @unpack h = param
@@ -577,7 +500,7 @@ function monte_carlo_simulation(param, dec, measures, prices, NN)
         a_sim[i] = a[ia_sim[i]]
         wage_sim[i] = wage[ii_sim[i]]
         h_sim[i] = h[ih_sim[i]]
-        earnings_sim[i] = wage_sim[i]*h_sim[i]
+        earnings_sim[i] = wage_sim[i] * h_sim[i]
     end
 
     # Return all simulated data as a NamedTuple
