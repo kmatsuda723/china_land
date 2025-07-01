@@ -1,6 +1,5 @@
 # ======================================================= #
-# Model of Aiyagari (1994)                                #
-# By Sagiri Kitao (Translated in Julia by Taiki Ono)      #
+
 # ======================================================= #
 
 # import libraries
@@ -10,32 +9,17 @@ using Random
 using Distributions
 using LaTeXStrings
 using Parameters # enable @unpack
+using DataFrames
+using CSV
+using StatsBase
+
 Random.seed!(1234)  # シードを固定
 
 include("toolbox.jl")
 
-
-
-# function interp(x, grid)
-#     # Find indices of the closest grids and the weights for linear interpolation
-#     ial = searchsortedlast(grid, x)  # Index of the grid just above or equal to x
-#     ial = max(1, ial)  # Ensure index iz within bounds
-
-#     if ial > length(grid) - 1
-#         ial = length(grid) - 1  # Handle case where x iz beyond the grid
-#     end
-
-#     iar = ial + 1  # The index just below ial
-
-#     # Compute the weights for interpolation
-#     varphi = (grid[iar] - x) / (grid[iar] - grid[ial])
-#     return ial, iar, varphi
-# end
-
-
 function setParameters(;
     mu=2.0,             # risk aversion (=3 baseline)             
-    beta=0.96^30,            # subjective discount factor 
+    beta=0.328125,            # subjective discount factor 
     delta=0.08,            # depreciation
     alpha=0.36,            # capital'h share of income
     b=0.0,             # borrowing limit
@@ -107,7 +91,7 @@ end
 
 function log_hplus(logz, logq, logh, logxi, param)
     @unpack gamma_z, gamma_q, gamma_h = param
-    return gamma_z * logz + gamma_q * logq + gamma_h * logh + logxi
+    return gamma_z*logz + gamma_q*logq + gamma_h*logh + logxi
 end
 
 function set_prices(param, KL, land_lost, avg_income)
@@ -187,6 +171,7 @@ function solve_household(param, prices)
         # consumption utility remains a large negative number so that
         # such values will never be chosen as utility maximizing
 
+        # Threads.@threads for ii in 1:NI
         for ii in 1:NI
             for ia in 1:NA # k(STATE)
                 for ih in 1:NH # h(STATE)
@@ -251,14 +236,8 @@ function solve_household(param, prices)
             end
         end
         err = maximum(abs.(tv - v))
-
         v .= tv
-
-        # println([iter,err])
-        #flush(stdout)
-
         iter += 1
-
     end
 
     if iter == maxiter
@@ -286,11 +265,7 @@ function get_distribution(param, dec, prices)
     errTol = 0.00001
     maxiter = 2000
     iter = 1
-    meanL = 0.0
-    land_lost = 0.0
     p_help = zeros(NI)
-    avg_income = 0.0
-
 
     while (err > errTol) & (iter < maxiter)
         for ii in 1:NI
@@ -397,7 +372,6 @@ function get_Steadystate(param, icase)
     maxiter = 20
     iter = 1
     adj = 0.2
-    ell = 1.0
     # a = zeros(param.NA)
 
     KL0 = K0 / L0
@@ -437,8 +411,14 @@ function get_Steadystate(param, icase)
 
         # UPDATE GUESS AS K0+adj*(K1-K0)
 
-        println([iter, avg_income0, avg_income1, land_lost0, land_lost1, err2])
-
+        println([
+            iter,
+            round(avg_income0, digits=4),
+            round(avg_income1, digits=4),
+            round(land_lost0, digits=4),
+            round(land_lost1, digits=4),
+            round(err2, digits=4)
+        ])
         if err2 > errTol
             # KL0 += adj * (KL1 - KL0)
             avg_income0 += adj * (avg_income1 - avg_income0)
@@ -452,36 +432,11 @@ function get_Steadystate(param, icase)
         println("WARNING!! iter=$maxiter, err=$err2")
     end
 
-    # prices = set_prices(param, KL0, land_lost0, avg_income0)
-    # kfun0, iaplus, pplus = solve_household(param, prices)
-    # gridk0 = prices.a
-
     return param, dec, measures, prices, agg
-
 end
 
-# function sample_states_from_distribution(distribution_matrix, NN)
-#     NI, NH, NA, NZ = size(distribution_matrix)  # Get the dimensions of the distribution matrix
-
-#     # Flatten the distribution matrix into a 1D array of probabilities
-#     distribution_flat = vec(distribution_matrix)
-
-#     # Create a list of possible states, corresponding to the positions in the distribution matrix
-#     possible_states = [(ii, ih, ia, iz) for ii in 1:NI, ih in 1:NH, ia in 1:NA, iz in 1:NZ]
-
-#     # Sample initial states for each household based on the probabilities
-#     sampled_indices = rand(Categorical(distribution_flat), NN)
-
-#     # Map sampled indices back to household states (ih, iz, ia)
-#     initial_states = [possible_states[idx] for idx in sampled_indices]
-
-#     return initial_states
-# end
-
-
-
 function monte_carlo_simulation(param, dec, measures, prices, NN)
-    @unpack h = param
+    @unpack h, lz, lq, lh = param
     @unpack wage, a = prices
 
     ii_sim = zeros(Int, NN)
@@ -491,7 +446,7 @@ function monte_carlo_simulation(param, dec, measures, prices, NN)
 
     # Initialize storage for household trajectories
     initial_states = sample_states_from_distribution(measures.m, NN)
-    a_sim, h_sim, z_sim, wage_sim, earnings_sim = zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN)
+    a_sim, h_sim, z_sim, wage_sim, earnings_sim, lhp_sim = zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN)
 
     Threads.@threads for i in 1:NN
 
@@ -501,29 +456,152 @@ function monte_carlo_simulation(param, dec, measures, prices, NN)
         wage_sim[i] = wage[ii_sim[i]]
         h_sim[i] = h[ih_sim[i]]
         earnings_sim[i] = wage_sim[i] * h_sim[i]
+        lhp_sim[i] = log_hplus(lz[iz_sim[i]], lq[ii_sim[i]], lh[ih_sim[i]], 0.0, param)
     end
 
     # Return all simulated data as a NamedTuple
-    return (a_sim=a_sim, h_sim=h_sim, wage_sim=wage_sim, earnings_sim=earnings_sim, ii_sim=ii_sim)
+    return (a_sim=a_sim, h_sim=h_sim, wage_sim=wage_sim, earnings_sim=earnings_sim, ii_sim=ii_sim, lhp_sim=lhp_sim)
 end
 
 
 
 function output_gen(param, dec, measures, prices, agg, icase)
 
-    display(agg.mass_i)
-    display(agg.mass_h)
-    display(agg.mass_a)
-    display(agg.mass_z)
+    display(round.(agg.mass_i; digits=4))
+    display(round.(agg.mass_h; digits=4))
+    display(round.(agg.mass_a; digits=4))
+    display(round.(agg.mass_z; digits=4))
 
     II = 50000
 
     sim = monte_carlo_simulation(param, dec, measures, prices, II)
     gridk0 = prices.a
 
-    return (kfun0=dec.aplus, pplus=dec.pplus, gridk0=gridk0)
+    r_share = sum(measures.m[1:2, :, :, :])/sum(measures.m[:, :, :, :])
+    un_share = sum(measures.m[4, :, :, :])/sum(measures.m[:, :, :, :])
+
+    college_thres = percentile(sim.lhp_sim, 90)
+    # error(college_thresl)
+
+    col_rate = zeros(param.NI)
+    for ii in 1:param.NI
+    inds = findall(sim.ii_sim .== ii)  # ii_sim が 1 のインデックスを取得
+
+    # フィルタされた人たちのうち、lhp_sim が college_thres を超える割合
+    count_above = count(i -> sim.lhp_sim[i] > college_thres, inds)
+
+    # 割合（全体に対する比率）
+    col_rate[ii] = count_above / length(inds)
+    end
+
+error(col_rate)
+
+    return (kfun0=dec.aplus, pplus=dec.pplus, gridk0=gridk0, KK=agg.meank, 
+    LL=agg.meanL, r_share=r_share, un_share=un_share)
 
 end
+
+function calibration(params_in)
+
+    println("------------------------------")
+
+    NMOM = 3
+
+    model = zeros(NMOM)
+    data = zeros(NMOM)
+    dist = zeros(NMOM)
+    params = zeros(NMOM)
+
+    # Initialize model and data vectors directly
+    params = [
+        min(max(params_in[1], 0.0), 0.96),
+        max(params_in[2], 0.0),
+        params_in[3]
+    ]
+
+    println("parameters")
+    display(params)
+    println("")
+
+    data = [
+        3.53,  # K/Y
+        0.584,
+        0.168
+    ]
+
+    # Set parameters and get steady state results
+    param = setParameters(
+        beta=params[1],
+        r_land=params[2],
+        zeta=params[3]
+    )
+
+    param, HHdecisions, measures, prices, agg = get_Steadystate(param, 1)
+    output = output_gen(param, HHdecisions, measures, prices, agg, 1)
+
+    # Extract model moments from the output
+    model = [
+        output.KK/output.LL*30.0,
+        output.r_share,
+        output.un_share
+    ]
+
+    println("MOMENTS")
+    println("")
+
+    # Compute the distance between model and data moments
+    for ii in 1:NMOM
+        dist[ii] = abs(model[ii] - data[ii]) + 100000 * abs(params_in[ii] - params[ii])
+    end
+    dist = dist ./ data
+    max_dist = sum(dist .^ 2)
+
+    println("parameters")
+    display(params)
+    println("model moments")
+    display(model)
+    println("Distance")
+    display(dist)
+    println("Sum of Distance")
+    display(max_dist)
+    println("")
+
+        # Prepare labels and changes matrix for DataFrame creation
+        labels = [
+            "K/Y",
+            "rural share",
+            "urban non ag share"
+        ]
+
+    changes = hcat(params, model, data)
+    d_changes = round.(changes, digits=4)
+
+    # Create DataFrame directly
+    df = DataFrame(d_changes, :auto)
+    rename!(df, 1 => "param", 2 => "model moments", 3 => "data moments")
+    insertcols!(df, 1, :moments => labels)
+
+    # Write DataFrame to CSV
+    CSV.write("figures/calbration.csv", df)
+
+    return max_dist
+end
+
+######################################################
+# CALIBRATION
+######################################################
+
+# # # # Initial guess for the parameters
+initial_guess = [0.24044211514593838,
+4.722450268165282,
+0.07017182656085069
+]
+
+
+res = optimize(calibration, initial_guess)
+display(Optim.minimizer(res))
+error("stop")
+
 
 # ======================= #
 #  MAIN                   #
@@ -543,20 +621,20 @@ output[1] = output_gen(param, dec, measures, prices, agg, 1)
 
 
 # plot
-plot(output[1].gridk0, output[1].kfun0[1, 1, :, 1], color=:blue, linestyle=:solid, linewidth=2, label=L"hs,l_{low}",
-    title="Policy function", xlabel=L"a", ylabel=L"a'=g(a,l)", xlims=(0.0, prices.a_u), ylims=(0.0, prices.a_u), legend=:topleft)
-plot!(output[1].gridk0, output[1].kfun0[1, 4, :, 1], color=:red, linestyle=:solid, linewidth=2, label=L"hs,l_{mid}")
-plot!(output[1].gridk0, output[1].kfun0[1, 7, :, 1], color=:black, linestyle=:solid, linewidth=2, label=L"hs,l_{high}")
-plot!(output[1].gridk0, output[1].kfun0[1, 1, :, 2], color=:blue, linestyle=:dash, linewidth=2, label=L"cg,l_{mid}")
-plot!(output[1].gridk0, output[1].kfun0[1, 4, :, 2], color=:red, linestyle=:dash, linewidth=2, label=L"cg,l_{mid}")
-plot!(output[1].gridk0, output[1].kfun0[1, 7, :, 2], color=:black, linestyle=:dash, linewidth=2, label=L"cg,l_{high}")
+plot(output[1].gridk0, output[1].kfun0[1, 1, :, 2], color=:blue, linestyle=:solid, linewidth=2, label=L"hs,l_{low}",
+    title="Assets Policy function", xlabel=L"a", ylabel=L"a'=g(a,l)", xlims=(0.0, prices.a_u), ylims=(0.0, prices.a_u), legend=:topleft)
+plot!(output[1].gridk0, output[1].kfun0[1, 4, :, 2], color=:red, linestyle=:solid, linewidth=2, label=L"hs,l_{mid}")
+plot!(output[1].gridk0, output[1].kfun0[1, 7, :, 2], color=:black, linestyle=:solid, linewidth=2, label=L"hs,l_{high}")
+plot!(output[1].gridk0, output[1].kfun0[1, 1, :, 4], color=:blue, linestyle=:dash, linewidth=2, label=L"cg,l_{mid}")
+plot!(output[1].gridk0, output[1].kfun0[1, 4, :, 4], color=:red, linestyle=:dash, linewidth=2, label=L"cg,l_{mid}")
+plot!(output[1].gridk0, output[1].kfun0[1, 7, :, 4], color=:black, linestyle=:dash, linewidth=2, label=L"cg,l_{high}")
 savefig("figures/fig_kfun.pdf")
 
-plot(output[1].gridk0, output[1].pplus[1, 4, :, 1, 1], color=:blue, linestyle=:solid, linewidth=2, label=L"rural rural",
-    title="Policy function", xlabel=L"a", ylabel=L"a'=g(a,l)", xlims=(0.0, prices.a_u), ylims=(0, 1), legend=:topleft)
-plot!(output[1].gridk0, output[1].pplus[1, 4, :, 1, 2], color=:red, linestyle=:solid, linewidth=2, label=L"rural urban")
-plot!(output[1].gridk0, output[1].pplus[1, 4, :, 1, 3], color=:black, linestyle=:solid, linewidth=2, label=L"urban ag")
-plot!(output[1].gridk0, output[1].pplus[1, 4, :, 1, 4], color=:blue, linestyle=:dash, linewidth=2, label=L"urban non-ag")
+plot(output[1].gridk0, output[1].pplus[1, 4, :, 3, 1], color=:blue, linestyle=:solid, linewidth=2, label=L"rural, rural",
+    title="Category Policy function", xlabel=L"a", ylabel=L"a'=g(a,l)", xlims=(0.0, prices.a_u), ylims=(0, 1), legend=:topleft)
+plot!(output[1].gridk0, output[1].pplus[1, 4, :, 3, 2], color=:red, linestyle=:solid, linewidth=2, label=L"rural, urban")
+plot!(output[1].gridk0, output[1].pplus[1, 4, :, 3, 3], color=:black, linestyle=:solid, linewidth=2, label=L"urban, ag")
+plot!(output[1].gridk0, output[1].pplus[1, 4, :, 3, 4], color=:blue, linestyle=:dash, linewidth=2, label=L"urban, nonag")
 # plot!(a, pplus[1, 4, :, 2], color=:red, linestyle=:dash, linewidth=2, label=L"cg,l_{mid}")
 # plot!(a, pplus[1, 7, :, 2], color=:black, linestyle=:dash, linewidth=2, label=L"cg,l_{high}")
 savefig("figures/fig_sfun.pdf")
