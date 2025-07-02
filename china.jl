@@ -143,10 +143,10 @@ function set_prices(param, KL, land_lost, avg_income)
     ell = 1.0 / (1.0 - land_lost)
 
     tuition = zeros(param.NI)
-    tuition[1] = 2222.0 / 30333.0 * avg_income
-    tuition[2] = 2222.0 / 30333.0 * avg_income
-    tuition[3] = 3666.0 / 30333.0 * avg_income
-    tuition[4] = 5250.0 / 30333.0 * avg_income
+    tuition[1] = 13471.0 / 30333.0 / 30 * avg_income
+    tuition[2] = 13471.0 / 30333.0 / 30 * avg_income
+    tuition[3] = 24151.0 / 30333.0 / 30 * avg_income
+    tuition[4] = 54728.0 / 30333.0 / 30 * avg_income
 
     return (r=r, wage=wage, phi=phi, a=a, gridk2=gridk2, ell=ell, avg_income=avg_income, tuition=tuition, a_u=a_u)
 
@@ -590,7 +590,7 @@ function calibration(params_in)
         dist[ii] = abs(model[ii] - data[ii]) + 100000 * abs(params_in[ii] - params[ii])
     end
     dist = dist ./ data
-    max_dist = sum(dist .^ 2)
+    max_dist = sum(dist .^ 2) / NMOM
 
     println("parameters")
     display(params)
@@ -630,11 +630,11 @@ end
 ######################################################
 
 # # # # Initial guess for the parameters
-initial_guess = [0.2976015804983434,
-2.780736577696845,
--0.057904740646123116,
-0.3354534956903914,
-0.09369168328905586
+initial_guess = [0.30127637159694015,
+2.9789239065449236,
+-0.058907996556566346,
+0.28324555678102276,
+0.0719245322280198
 ]
 
 
