@@ -25,8 +25,8 @@ function setParameters(;
     b=0.0,             # borrowing limit
     NH=7,             # number of discretized states
     rho=0.6,           # first-order autoregressive coefficient
-    gamma_h=0.08,
-    gamma_z=0.57,
+    gamma_h=0.0,
+    gamma_z=0.12,
     gamma_q=0.1,
     zeta=0.0,
     r_land=1.04^30 - 1.0,
@@ -59,7 +59,7 @@ function setParameters(;
     #  HUMAN CAPITAL INVESTMENT                         #
     # ================================================= #
 
-    # ii = 1: rr (earner+kid in rural), ii = 2: rn (kid in rural, earner in urban)
+    # ii = 1: rr (earner+kid in rural), ii = 2: ru (kid in rural, earner in urban)
     # ii = 3: ua (both urban agricultural hukou), ii = 4: un (both urban non-agricultural hukou)
 
     # tuition
@@ -69,10 +69,10 @@ function setParameters(;
 
 
     lq = zeros(NI)
-    lq[1] = 0.0
-    lq[2] = 0.0
-    lq[3] = 0.1
-    lq[4] = 0.2
+    lq[1] = log(0.72)
+    lq[2] = log(0.72)
+    lq[3] = log(0.88)
+    lq[4] = log(1.0)
 
     mv_cost = zeros(NI, NI)
     for ii in 1:NI
@@ -479,6 +479,8 @@ function output_gen(param, dec, measures, prices, agg, icase)
 
     r_share = sum(measures.m[1:2, :, :, :])/sum(measures.m[:, :, :, :])
     un_share = sum(measures.m[4, :, :, :])/sum(measures.m[:, :, :, :])
+    ru_share = sum(measures.m[2, :, :, :])/sum(measures.m[:, :, :, :])
+
 
     college_thres = percentile(sim.lhp_sim, 90)
     # error(college_thresl)
@@ -494,10 +496,9 @@ function output_gen(param, dec, measures, prices, agg, icase)
     col_rate[ii] = count_above / length(inds)
     end
 
-error(col_rate)
 
     return (kfun0=dec.aplus, pplus=dec.pplus, gridk0=gridk0, KK=agg.meank, 
-    LL=agg.meanL, r_share=r_share, un_share=un_share)
+    LL=agg.meanL, r_share=r_share, un_share=un_share, ru_share=ru_share)
 
 end
 
@@ -505,7 +506,7 @@ function calibration(params_in)
 
     println("------------------------------")
 
-    NMOM = 3
+    NMOM = 4
 
     model = zeros(NMOM)
     data = zeros(NMOM)
@@ -516,7 +517,8 @@ function calibration(params_in)
     params = [
         min(max(params_in[1], 0.0), 0.96),
         max(params_in[2], 0.0),
-        params_in[3]
+        params_in[3],
+        max(params_in[4], 1e-4),
     ]
 
     println("parameters")
@@ -525,15 +527,17 @@ function calibration(params_in)
 
     data = [
         3.53,  # K/Y
-        0.584,
-        0.168
+        0.584, # 0.445+0.139
+        0.168,
+        0.139
     ]
 
     # Set parameters and get steady state results
     param = setParameters(
         beta=params[1],
         r_land=params[2],
-        zeta=params[3]
+        zeta=params[3],
+        sigma_e=params[4]
     )
 
     param, HHdecisions, measures, prices, agg = get_Steadystate(param, 1)
@@ -543,7 +547,8 @@ function calibration(params_in)
     model = [
         output.KK/output.LL*30.0,
         output.r_share,
-        output.un_share
+        output.un_share,
+        output.ru_share
     ]
 
     println("MOMENTS")
@@ -570,7 +575,8 @@ function calibration(params_in)
         labels = [
             "K/Y",
             "rural share",
-            "urban non ag share"
+            "urban non ag share",
+            "rural left behind share"
         ]
 
     changes = hcat(params, model, data)
@@ -592,9 +598,10 @@ end
 ######################################################
 
 # # # # Initial guess for the parameters
-initial_guess = [0.24044211514593838,
-4.722450268165282,
-0.07017182656085069
+initial_guess = [0.21881470596344582,
+5.654660050985737,
+0.16824700936582918,
+0.1
 ]
 
 

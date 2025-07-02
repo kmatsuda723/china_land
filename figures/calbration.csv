@@ -1,4 +1,5 @@
 moments,param,model moments,data moments
-K/Y,0.2404,3.6774,3.53
-rural share,4.7225,0.598,0.584
-urban non ag share,0.0702,0.1652,0.168
+K/Y,0.1778,3.3009,3.53
+rural share,6.478,0.5121,0.584
+urban non ag share,-0.2413,0.2398,0.168
+rural left behind share,0.4489,0.2562,0.139
