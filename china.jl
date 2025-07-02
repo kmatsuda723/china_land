@@ -33,6 +33,7 @@ function setParameters(;
     phi_a=0.5,
     phi_n=0.77,
     sigma_e=0.1,
+    leftbehindcost = 0.0,
     sig=1.0           # intermediate value to calculate sigma (=0.4 BASE)
 )
 
@@ -84,7 +85,10 @@ function setParameters(;
     land_risk[3] = phi_a
     land_risk[4] = phi_n
 
-    return (mu=mu, beta=beta, delta=delta, alpha=alpha, b=b, gamma_z=gamma_z,
+    dutil = zeros(NI)
+    dutil[2] = leftbehindcost
+
+    return (mu=mu, beta=beta, delta=delta, alpha=alpha, b=b, gamma_z=gamma_z, dutil=dutil,
         gamma_q=gamma_q, gamma_h=gamma_h, NH=NH, h=h, z=z, lh=lh, lz=lz, lq=lq, prob=prob,
         NA=NA, Nk2=Nk2, NZ=NZ, NI=NI, mv_cost=mv_cost, land_risk=land_risk, r_land=r_land, sigma_e=sigma_e)
 end
@@ -150,7 +154,7 @@ end
 
 
 function solve_household(param, prices)
-    @unpack NA, NH, NZ, Nk2, NI, mu, h, beta, prob, lz, lh, lq, mv_cost, r_land, land_risk, sigma_e = param
+    @unpack NA, NH, NZ, Nk2, NI, mu, h, beta, prob, lz, lh, lq, mv_cost, r_land, land_risk, sigma_e, dutil = param
     @unpack r, wage, a, gridk2, ell, tuition = prices
 
     # initialize some variables
@@ -193,7 +197,7 @@ function solve_household(param, prices)
                                     break
                                 end
 
-                                util = (cons^(1.0 - mu)) / (1.0 - mu)
+                                util = (cons^(1.0 - mu)) / (1.0 - mu) - dutil[ii]
 
                                 # interpolation of next period'h value function
                                 # find node and weight for gridk2 (evaluating gridk2 in a) 
@@ -477,6 +481,29 @@ function output_gen(param, dec, measures, prices, agg, icase)
     sim = monte_carlo_simulation(param, dec, measures, prices, II)
     gridk0 = prices.a
 
+    # 上位25%の閾値（75パーセンタイル）を求める
+    income_threshold = quantile(sim.earnings_sim, 0.75)
+
+    # income が threshold 以上の個人のインデックスを取得
+    top25_idx = findall(x -> x >= income_threshold, sim.earnings_sim)
+
+       # その中で、state が 3 または 4 の人の数を数える
+    count34 = count(i -> sim.ii_sim[i] in (3, 4), top25_idx)
+
+        share34 = count34 / length(top25_idx)
+
+
+    # 条件：stateが3または4の人のインデックスを取得
+idx_34 = findall(i -> sim.ii_sim[i] in (3, 4), sim.ii_sim)
+
+# 上位25%に該当する人の数をカウント
+count_top25_in_34 = count(i -> sim.earnings_sim[i] >= income_threshold, idx_34)
+
+share_top25_in_34 = count_top25_in_34 / length(idx_34)
+
+# error(share_top25_in_34)
+
+
     r_share = sum(measures.m[1:2, :, :, :])/sum(measures.m[:, :, :, :])
     un_share = sum(measures.m[4, :, :, :])/sum(measures.m[:, :, :, :])
     ru_share = sum(measures.m[2, :, :, :])/sum(measures.m[:, :, :, :])
@@ -497,8 +524,8 @@ function output_gen(param, dec, measures, prices, agg, icase)
     end
 
 
-    return (kfun0=dec.aplus, pplus=dec.pplus, gridk0=gridk0, KK=agg.meank, 
-    LL=agg.meanL, r_share=r_share, un_share=un_share, ru_share=ru_share)
+    return (kfun0=dec.aplus, pplus=dec.pplus, gridk0=gridk0, KK=agg.meank, share_top25_in_34=share_top25_in_34, 
+    LL=agg.meanL, r_share=r_share, un_share=un_share, ru_share=ru_share, share34=share34)
 
 end
 
@@ -506,7 +533,7 @@ function calibration(params_in)
 
     println("------------------------------")
 
-    NMOM = 4
+    NMOM = 5
 
     model = zeros(NMOM)
     data = zeros(NMOM)
@@ -518,7 +545,8 @@ function calibration(params_in)
         min(max(params_in[1], 0.0), 0.96),
         max(params_in[2], 0.0),
         params_in[3],
-        max(params_in[4], 1e-4),
+        params_in[4],
+        max(params_in[5], 1e-4),
     ]
 
     println("parameters")
@@ -529,7 +557,8 @@ function calibration(params_in)
         3.53,  # K/Y
         0.584, # 0.445+0.139
         0.168,
-        0.139
+        0.139, # 0.144/(1.0-0.584)# 0.139
+        0.734
     ]
 
     # Set parameters and get steady state results
@@ -537,7 +566,8 @@ function calibration(params_in)
         beta=params[1],
         r_land=params[2],
         zeta=params[3],
-        sigma_e=params[4]
+        leftbehindcost=params[4],# sigma_e=params[4]
+        sigma_e=params[5]
     )
 
     param, HHdecisions, measures, prices, agg = get_Steadystate(param, 1)
@@ -548,7 +578,8 @@ function calibration(params_in)
         output.KK/output.LL*30.0,
         output.r_share,
         output.un_share,
-        output.ru_share
+        output.ru_share,#output.share34#output.ru_share
+        output.share34
     ]
 
     println("MOMENTS")
@@ -576,7 +607,8 @@ function calibration(params_in)
             "K/Y",
             "rural share",
             "urban non ag share",
-            "rural left behind share"
+            "left behind share",#"top 25% in urban"
+            "top 25% in urban"
         ]
 
     changes = hcat(params, model, data)
@@ -598,10 +630,11 @@ end
 ######################################################
 
 # # # # Initial guess for the parameters
-initial_guess = [0.21881470596344582,
-5.654660050985737,
-0.16824700936582918,
-0.1
+initial_guess = [0.2976015804983434,
+2.780736577696845,
+-0.057904740646123116,
+0.3354534956903914,
+0.09369168328905586
 ]
 
 
