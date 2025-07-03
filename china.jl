@@ -440,8 +440,8 @@ function get_Steadystate(param, icase)
 end
 
 function monte_carlo_simulation(param, dec, measures, prices, NN)
-    @unpack h, lz, lq, lh = param
-    @unpack wage, a = prices
+    @unpack h, lz, lq, lh, r_land = param
+    @unpack wage, a, ell = prices
 
     ii_sim = zeros(Int, NN)
     iz_sim = zeros(Int, NN)
@@ -470,6 +470,8 @@ end
 
 
 function output_gen(param, dec, measures, prices, agg, icase)
+    @unpack r_land = param
+    @unpack ell = prices
 
     display(round.(agg.mass_i; digits=4))
     display(round.(agg.mass_h; digits=4))
@@ -503,6 +505,14 @@ share_top25_in_34 = count_top25_in_34 / length(idx_34)
 
 # error(share_top25_in_34)
 
+# Get indices where state is 1
+# idx_state1 = findall(sim.ii_sim .== 1)
+
+land_income_sim = r_land*ell./(sim.earnings_sim .+ r_land*ell)
+
+# Take the mean of earnings_sim only over those indices
+land_income_share_state1 = mean(land_income_sim[sim.ii_sim .== 1])
+
 
     r_share = sum(measures.m[1:2, :, :, :])/sum(measures.m[:, :, :, :])
     un_share = sum(measures.m[4, :, :, :])/sum(measures.m[:, :, :, :])
@@ -525,7 +535,7 @@ share_top25_in_34 = count_top25_in_34 / length(idx_34)
 
 
     return (kfun0=dec.aplus, pplus=dec.pplus, gridk0=gridk0, KK=agg.meank, share_top25_in_34=share_top25_in_34, 
-    LL=agg.meanL, r_share=r_share, un_share=un_share, ru_share=ru_share, share34=share34)
+    LL=agg.meanL, r_share=r_share, un_share=un_share, ru_share=ru_share, share34=share34, land_income_share_state1=land_income_share_state1)
 
 end
 
