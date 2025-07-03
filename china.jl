@@ -448,7 +448,7 @@ function get_Steadystate(param, icase)
     return param, dec, measures, prices, agg
 end
 
-function monte_carlo_simulation(param, dec, measures, prices, NN)
+function monte_carlo_simulation(param, dec, measures, prices, NN, icase_sim)
     @unpack h, lz, lq, lh, r_land = param
     @unpack wage, a, ell = prices
 
@@ -470,6 +470,9 @@ function monte_carlo_simulation(param, dec, measures, prices, NN)
         h_sim[i] = h[ih_sim[i]]
         earnings_sim[i] = wage_sim[i] * h_sim[i]
         lhp_sim[i] = log_hplus(lz[iz_sim[i]], lq[ii_sim[i]], lh[ih_sim[i]], 0.0, param)
+        if icase_sim==1 && (ii_sim[i]==3 || ii_sim[i]==4)
+            lhp_sim[i] = log_hplus(lz[iz_sim[i]], lq[1], lh[ih_sim[i]], 0.0, param)
+        end
     end
 
     # Return all simulated data as a NamedTuple
@@ -489,14 +492,14 @@ function output_gen(param, dec, measures, prices, agg, icase)
 
     II = 50000
 
-    sim = monte_carlo_simulation(param, dec, measures, prices, II)
+    sim = monte_carlo_simulation(param, dec, measures, prices, II, 0)
     gridk0 = prices.a
 
     # Determine the threshold for the top 25% (75th percentile)
     income_threshold = quantile(sim.earnings_sim, 0.75)
 
     # Determine the threshold for the top 10% (90th percentile)
-    income_thres_top10 = quantile(sim.earnings_sim, 0.0)
+    income_thres_top10 = quantile(sim.lhp_sim, 0.90)
 
     # Get indices of individuals whose income is above the threshold
     top25_idx = findall(x -> x >= income_threshold, sim.earnings_sim)
@@ -511,6 +514,17 @@ function output_gen(param, dec, measures, prices, agg, icase)
     # Count the number in the top 25% among those with state 3 or 4
     count_top25_in_34 = count(i -> sim.earnings_sim[i] >= income_threshold, idx_34)
     share_top25_in_34 = count_top25_in_34 / length(idx_34)
+
+    # Get indices where state is 1 or 2
+    idx_12 = findall(i -> sim.ii_sim[i] in (3, 4), sim.ii_sim)
+
+    
+
+    # # Count the number in the top 25% among those with state 3 or 4
+    count_top10_in_34 = count(i -> sim.lhp_sim[i] >= income_thres_top10, idx_34)
+    share_top10_in_34 = count_top10_in_34 / length(idx_34)
+
+    # error(sim.lhp_sim[idx_34])
 
     land_income_sim = r_land * ell ./ (sim.earnings_sim .+ r_land * ell)
 
@@ -535,9 +549,20 @@ function output_gen(param, dec, measures, prices, agg, icase)
         col_rate[ii] = count_above / length(inds)
     end
 
+    # display(income_thres_top10)
+
+    if icase==1
+        sim = monte_carlo_simulation(param, dec, measures, prices, II, 1)
+            # Count the number in the top 25% among those with state 3 or 4
+    count_top10_in_34_cf = count(i -> sim.lhp_sim[i] >= income_thres_top10, idx_34)
+    share_top10_in_34_cf = count_top10_in_34_cf / length(idx_34)
+    # error([share_top10_in_34, share_top10_in_34_cf])
+    end
+
 
     return (kfun0=dec.aplus, pplus=dec.pplus, gridk0=gridk0, KK=agg.meank, share_top25_in_34=share_top25_in_34, land_income_share_state1=land_income_share_state1,
-        LL=agg.meanL, r_share=r_share, ua_share=ua_share, ru_share=ru_share, share34=share34, rr_share=rr_share, income_thres_top10=income_thres_top10)
+        LL=agg.meanL, r_share=r_share, ua_share=ua_share, ru_share=ru_share, share34=share34, rr_share=rr_share, income_thres_top10=income_thres_top10,
+        share_top10_in_34=share_top10_in_34, share_top10_in_34_cf=share_top10_in_34_cf)
 
 end
 
