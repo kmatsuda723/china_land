@@ -19,7 +19,7 @@ include("toolbox.jl")
 
 function setParameters(;
     mu=2.0,             # risk aversion (=3 baseline)             
-    beta=0.328125,            # subjective discount factor 
+    beta=0.40987992166424403,            # subjective discount factor 
     delta=0.08,            # depreciation
     alpha=0.36,            # capital'h share of income
     b=0.0,             # borrowing limit
@@ -28,16 +28,18 @@ function setParameters(;
     gamma_h=0.0,
     gamma_z=0.12,
     gamma_q=0.1,
-    zeta_ua=0.0,
-    r_land=1.04^30 - 1.0,
+    zeta_ua=0.11200676783749941,
+    r_land=0.04661546513664531,
     phi_a=0.5,
-    phi_n=0.77,
-    sigma_e=0.1,
-    zeta_ru=0.0,
-    zeta_rr=0.0,
+    delta_n=0.27,
+    sigma_e=0.17592346799252628,
+    zeta_ru=0.3749448694982676,
+    zeta_rr=-0.2990971845888921,
+    income_thres_top10_base=0.0,
     sig=1.0           # intermediate value to calculate sigma (=0.4 BASE)
 )
 
+    phi_n = phi_a + delta_n
     # ================================================= #
     #  COMPUTE TRANSITION MATRIX OF LABOR PRODUCTIVITY  #
     # ================================================= #
@@ -92,7 +94,7 @@ function setParameters(;
     dutil[1] = zeta_rr
 
     return (mu=mu, beta=beta, delta=delta, alpha=alpha, b=b, gamma_z=gamma_z, dutil=dutil, zeta_rr=zeta_rr,
-        gamma_q=gamma_q, gamma_h=gamma_h, NH=NH, h=h, z=z, lh=lh, lz=lz, lq=lq, prob=prob,
+        gamma_q=gamma_q, gamma_h=gamma_h, NH=NH, h=h, z=z, lh=lh, lz=lz, lq=lq, prob=prob, income_thres_top10_base=income_thres_top10_base,
         NA=NA, Nk2=Nk2, NZ=NZ, NI=NI, mv_cost=mv_cost, land_risk=land_risk, r_land=r_land, sigma_e=sigma_e)
 end
 
@@ -217,9 +219,9 @@ function solve_household(param, prices)
                                 for izp in 1:NZ # Expectation of next period's value function
                                     pz = prob[iz, izp]
                                     vpr += pz * (
-                                        varphi_h * (varphi * v[iip, ihl, ial, izp] + (1.0 - varphi) * v[iip, ihl, iar, izp]) + 
+                                        varphi_h * (varphi * v[iip, ihl, ial, izp] + (1.0 - varphi) * v[iip, ihl, iar, izp]) +
                                         (1.0 - varphi_h) * (varphi * v[iip, ihr, ial, izp] + (1.0 - varphi) * v[iip, ihr, iar, izp])
-                                        )
+                                    )
                                 end
 
                                 vtemp[iap, iip] = util + beta * vpr
@@ -477,7 +479,7 @@ end
 
 
 function output_gen(param, dec, measures, prices, agg, icase)
-    @unpack r_land = param
+    @unpack r_land, income_thres_top10_base = param
     @unpack ell = prices
 
     display(round.(agg.mass_i; digits=4))
@@ -492,6 +494,9 @@ function output_gen(param, dec, measures, prices, agg, icase)
 
     # Determine the threshold for the top 25% (75th percentile)
     income_threshold = quantile(sim.earnings_sim, 0.75)
+
+    # Determine the threshold for the top 10% (90th percentile)
+    income_thres_top10 = quantile(sim.earnings_sim, 0.0)
 
     # Get indices of individuals whose income is above the threshold
     top25_idx = findall(x -> x >= income_threshold, sim.earnings_sim)
@@ -532,7 +537,7 @@ function output_gen(param, dec, measures, prices, agg, icase)
 
 
     return (kfun0=dec.aplus, pplus=dec.pplus, gridk0=gridk0, KK=agg.meank, share_top25_in_34=share_top25_in_34, land_income_share_state1=land_income_share_state1,
-        LL=agg.meanL, r_share=r_share, ua_share=ua_share, ru_share=ru_share, share34=share34, rr_share=rr_share)
+        LL=agg.meanL, r_share=r_share, ua_share=ua_share, ru_share=ru_share, share34=share34, rr_share=rr_share, income_thres_top10=income_thres_top10)
 
 end
 
@@ -637,6 +642,61 @@ function calibration(params_in)
     return max_dist
 end
 
+function calibration_phi_a(params_in)
+
+    println("------------------------------")
+
+    NMOM = 1
+
+    model = zeros(NMOM)
+    data = zeros(NMOM)
+    dist = zeros(NMOM)
+    params = zeros(NMOM)
+
+
+    params[1] = max(params_in[1], 0.0)
+
+    println("parameters")
+    display(params)
+    println("")
+
+    data[1] = 0.13570229260920416 * (1.0 - 0.3)
+
+    param = setParameters(phi_a=params[1]) # check the parameters above
+
+    # output = get_Steadystate(param, 1)
+
+    param, HHdecisions, measures, prices, agg = get_Steadystate(param, 1)
+    output = output_gen(param, HHdecisions, measures, prices, agg, 1)
+
+    # model[1] = output.elas_I_y
+    model[1] = output.ru_share
+
+
+    println("MOMENTS")
+    println("")
+
+    for ii in 1:NMOM
+        dist[ii] = abs(model[ii] - data[ii]) + 100000 * abs(params_in[ii] - params[ii])
+    end
+
+    max_dist = sum(dist .^ 2)
+
+    # max_dist = -output.welfare
+
+    println("parameters")
+    display(params)
+    println("model moments")
+    display(model)
+    println("Distance")
+    display(dist)
+    println("Sum of Distance")
+    display(max_dist)
+    println("")
+
+    return max_dist
+end
+
 ######################################################
 # CALIBRATION
 ######################################################
@@ -651,9 +711,13 @@ initial_guess = [0.40987992166424403,
 ]
 
 
-res = optimize(calibration, initial_guess)
-display(Optim.minimizer(res))
-error("stop")
+# res = optimize(calibration, initial_guess)
+# display(Optim.minimizer(res))
+# error("stop")
+
+# res = optimize(x -> calibration_phi_a(x), [0.5])
+# display(Optim.minimizer(res))
+# error("stop")
 
 
 # ======================= #
@@ -666,16 +730,33 @@ Ncase = 1
 # @unpack NL, NY, NZ, NP, y = param_help
 
 output = Vector{NamedTuple}(undef, Ncase)
+income_thres_top10_base = 0.0
 
-# set parameters
-param = setParameters()
-param, dec, measures, prices, agg = get_Steadystate(param, 1)
-output[1] = output_gen(param, dec, measures, prices, agg, 1)
+for i_case = 1:Ncase
+    global income_thres_top10_base
+
+    # set parameters
+    if i_case == 1
+        println("case: benchmark")
+        param = setParameters()
+
+    elseif i_case == 2
+        println("case: validation exercise")
+        param = setParameters(income_thres_top10_base=income_thres_top10_base)
+    end
+    param, dec, measures, prices, agg = get_Steadystate(param, i_case)
+    output[i_case] = output_gen(param, dec, measures, prices, agg, i_case)
+
+    if i_case == 1
+        income_thres_top10_base = output[i_case].income_thres_top10
+    end
+
+end
 
 
 # plot
 plot(output[1].gridk0, output[1].kfun0[1, 1, :, 2], color=:blue, linestyle=:solid, linewidth=2, label=L"hs,l_{low}",
-    title="Assets Policy function", xlabel=L"a", ylabel=L"a'=g(a,l)", xlims=(0.0, prices.a_u), ylims=(0.0, prices.a_u), legend=:topleft)
+    title="Assets Policy function", xlabel=L"a", ylabel=L"a'=g(a,l)", xlims=(0.0, 1.0 ), ylims=(0.0, prices.a_u), legend=:topleft)
 plot!(output[1].gridk0, output[1].kfun0[1, 4, :, 2], color=:red, linestyle=:solid, linewidth=2, label=L"hs,l_{mid}")
 plot!(output[1].gridk0, output[1].kfun0[1, 7, :, 2], color=:black, linestyle=:solid, linewidth=2, label=L"hs,l_{high}")
 plot!(output[1].gridk0, output[1].kfun0[1, 1, :, 4], color=:blue, linestyle=:dash, linewidth=2, label=L"cg,l_{mid}")
@@ -684,7 +765,7 @@ plot!(output[1].gridk0, output[1].kfun0[1, 7, :, 4], color=:black, linestyle=:da
 savefig("figures/fig_kfun.pdf")
 
 plot(output[1].gridk0, output[1].pplus[1, 4, :, 3, 1], color=:blue, linestyle=:solid, linewidth=2, label=L"rural, rural",
-    title="Category Policy function", xlabel=L"a", ylabel=L"a'=g(a,l)", xlims=(0.0, prices.a_u), ylims=(0, 1), legend=:topleft)
+    title="Category Policy function", xlabel=L"a", ylabel=L"a'=g(a,l)", xlims=(0.0, 1.0 ), ylims=(0, 1), legend=:topleft)
 plot!(output[1].gridk0, output[1].pplus[1, 4, :, 3, 2], color=:red, linestyle=:solid, linewidth=2, label=L"rural, urban")
 plot!(output[1].gridk0, output[1].pplus[1, 4, :, 3, 3], color=:black, linestyle=:solid, linewidth=2, label=L"urban, ag")
 plot!(output[1].gridk0, output[1].pplus[1, 4, :, 3, 4], color=:blue, linestyle=:dash, linewidth=2, label=L"urban, nonag")
