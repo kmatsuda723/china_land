@@ -13,7 +13,7 @@ using DataFrames
 using CSV
 using StatsBase
 
-Random.seed!(1234)  # シードを固定
+Random.seed!(1234)  # Set random seed
 
 include("toolbox.jl")
 
@@ -28,12 +28,13 @@ function setParameters(;
     gamma_h=0.0,
     gamma_z=0.12,
     gamma_q=0.1,
-    zeta=0.0,
+    zeta_ua=0.0,
     r_land=1.04^30 - 1.0,
     phi_a=0.5,
     phi_n=0.77,
     sigma_e=0.1,
-    leftbehindcost = 0.0,
+    zeta_ru=0.0,
+    zeta_rr=0.0,
     sig=1.0           # intermediate value to calculate sigma (=0.4 BASE)
 )
 
@@ -43,9 +44,9 @@ function setParameters(;
 
     # ROUTINE tauchen.param TO COMPUTE TRANSITION MATRIX, GRID OF AN AR(1) AND
     # STATIONARY DISTRIBUTION
-    # approximate labor endowment shocks with seven states Markov chain
-    # log(s_{t}) = rho*log(s_{t-1})+e_{t} 
-    # e_{t}~ N(0,sig^2)
+    # Approximate labor endowment shocks with seven-state Markov chain
+    # log(s_{t}) = rho*log(s_{t-1}) + e_{t}
+    # e_{t} ~ N(0, sig^2)
 
     M = 2.0
     NZ = 5
@@ -63,10 +64,10 @@ function setParameters(;
     # ii = 1: rr (earner+kid in rural), ii = 2: ru (kid in rural, earner in urban)
     # ii = 3: ua (both urban agricultural hukou), ii = 4: un (both urban non-agricultural hukou)
 
-    # tuition
+    # Tuition by group
     NI = 4
-    NA = 30                                     # grid size for STATE 
-    Nk2 = 30                                     # grid size for CONTROL
+    NA = 30                                     # Grid size for STATE
+    Nk2 = 30                                    # Grid size for CONTROL
 
 
     lq = zeros(NI)
@@ -76,9 +77,9 @@ function setParameters(;
     lq[4] = log(1.0)
 
     mv_cost = zeros(NI, NI)
-    for ii in 1:NI
-        mv_cost[ii, NI] = zeta
-    end
+    # for ii in 1:NI
+    #     mv_cost[ii, NI] = zeta_ua
+    # end
 
     land_risk = zeros(NI)
 
@@ -86,16 +87,18 @@ function setParameters(;
     land_risk[4] = phi_n
 
     dutil = zeros(NI)
-    dutil[2] = leftbehindcost
+    dutil[3] = zeta_ua
+    dutil[2] = zeta_ru
+    dutil[1] = zeta_rr
 
-    return (mu=mu, beta=beta, delta=delta, alpha=alpha, b=b, gamma_z=gamma_z, dutil=dutil,
+    return (mu=mu, beta=beta, delta=delta, alpha=alpha, b=b, gamma_z=gamma_z, dutil=dutil, zeta_rr=zeta_rr,
         gamma_q=gamma_q, gamma_h=gamma_h, NH=NH, h=h, z=z, lh=lh, lz=lz, lq=lq, prob=prob,
         NA=NA, Nk2=Nk2, NZ=NZ, NI=NI, mv_cost=mv_cost, land_risk=land_risk, r_land=r_land, sigma_e=sigma_e)
 end
 
 function log_hplus(logz, logq, logh, logxi, param)
     @unpack gamma_z, gamma_q, gamma_h = param
-    return gamma_z*logz + gamma_q*logq + gamma_h*logh + logxi
+    return gamma_z * logz + gamma_q * logq + gamma_h * logh + logxi
 end
 
 function set_prices(param, KL, land_lost, avg_income)
@@ -113,8 +116,8 @@ function set_prices(param, KL, land_lost, avg_income)
     wage[2:4] .= 1.35
     # wage = (1 - param.alpha) * ((param.alpha / (r + param.delta))^param.alpha)^(1 / (1 - param.alpha)) # wage
 
-    # -phi iz borrowing limit, b iz adhoc
-    # the second term iz natural limit
+    # -phi is borrowing limit, b is adhoc
+    # the second term is natural limit
     # if r <= 0.0
     phi = param.b
     # else
@@ -122,18 +125,18 @@ function set_prices(param, KL, land_lost, avg_income)
     # end
 
     # capital grid (need define in each iteration since it depends on r/phi)
-    a_u = 1.0                                    # maximum value of capital grid
-    a_l = -phi                                  # borrowing constraint
+    a_u = 1.0                                    # Maximum value of capital grid
+    a_l = -phi                                   # Borrowing constraint
     curvK = 1.1
 
-    # grid for state
+    # Grid for state
     a = zeros(param.NA)
     a[1] = a_l
     for ia in 2:param.NA
         a[ia] = a[1] + (a_u - a_l) * ((ia - 1) / (param.NA - 1))^curvK
     end
 
-    # grid for optimal choice
+    # Grid for optimal choice
     gridk2 = zeros(param.Nk2)
     gridk2[1] = a_l
     for ia in 2:param.Nk2
@@ -157,60 +160,66 @@ function solve_household(param, prices)
     @unpack NA, NH, NZ, Nk2, NI, mu, h, beta, prob, lz, lh, lq, mv_cost, r_land, land_risk, sigma_e, dutil = param
     @unpack r, wage, a, gridk2, ell, tuition = prices
 
-    # initialize some variables
-    iaplus = zeros(NI, NH, NA, NZ)    # new index of policy function 
-    aplus = similar(iaplus)     # policy function   
-    pplus = zeros(NI, NH, NA, NZ, NI) # old policy function 
+    # Initialize some variables
+    iaplus = zeros(NI, NH, NA, NZ)    # New index of policy function
+    aplus = similar(iaplus)           # Policy function
+    pplus = zeros(NI, NH, NA, NZ, NI) # Policy function for category choice
 
-    v = zeros(NI, NH, NA, NZ)        # old value function
-    tv = similar(iaplus)       # new value function
+    v = zeros(NI, NH, NA, NZ)         # Old value function
+    tv = similar(iaplus)              # New value function
 
-    err = 20.0   # error between old policy index and new policy index
-    maxiter = 2000 # maximum number of iteration 
-    iter = 1    # iteration counter
+    err = 20.0    # Error between old policy index and new policy index
+    maxiter = 2000 # Maximum number of iterations
+    iter = 1      # Iteration counter
+
+    lhplus_cache = [log_hplus(lz[iz], lq[ii], lh[ih], 0.0, param) for ii in 1:NI, ih in 1:NH, iz in 1:NZ]
+    interp_lh_cache = [(interp(lhplus_cache[ii, ih, iz], lh)) for ii in 1:NI, ih in 1:NH, iz in 1:NZ]
 
     while (err > 0.01) & (iter < maxiter)
 
-        # tabulate the utility function such that for zero or negative
-        # consumption utility remains a large negative number so that
+        # Tabulate the utility function such that for zero or negative
+        # consumption, utility remains a large negative number so that
         # such values will never be chosen as utility maximizing
 
-        # Threads.@threads for ii in 1:NI
+        # Threads.@threads 
         for ii in 1:NI
+            vtemp = fill(-1e6, Nk2, NI)
+            ptemp = fill(-1e6, Nk2, NI)
+            vtemp2 = fill(-1e6, Nk2)
+            # for ii in 1:NI
             for ia in 1:NA # k(STATE)
                 for ih in 1:NH # h(STATE)
                     for iz in 1:NZ
-                        vtemp = -1000000 .* ones(Nk2, NI) # initizalization
-                        ptemp = -1000000 .* ones(Nk2, NI) # initizalization
-                        vtemp2 = -1000000 .* ones(Nk2) # initizalization
-
+                        fill!(vtemp, -1e6)
+                        fill!(ptemp, -1e6)
+                        fill!(vtemp2, -1e6)
                         for iap in 1:Nk2 # k'(CONTROL)
                             for iip in 1:NI
 
-                                # amount of consumption given (k,l,k')
+                                # Amount of consumption given (k, l, k')
                                 cons = wage[ii] * h[ih] + (1.0 + r) * a[ia] - gridk2[iap] - tuition[iip] - mv_cost[ii, iip] + r_land * ell * (1.0 - land_risk[ii])
 
                                 if cons <= 0.0
-                                    # penalty for c<0.0
-                                    # once c becomes negative, vtemp will not be updated(=large negative number)
+                                    # Penalty for c < 0.0
+                                    # Once c becomes negative, vtemp will not be updated (= large negative number)
                                     # kccmax = iap - 1
                                     break
                                 end
 
-                                util = (cons^(1.0 - mu)) / (1.0 - mu) - dutil[ii]
+                                util = (max(cons, 1e-4)^(1.0 - mu)) / (1.0 - mu) - dutil[ii]
 
-                                # interpolation of next period'h value function
-                                # find node and weight for gridk2 (evaluating gridk2 in a) 
+                                # Interpolation of next period's value function
+                                # Find node and weight for gridk2 (evaluating gridk2 in a)
                                 ial, iar, varphi = interp(gridk2[iap], a)
+                                ihl, ihr, varphi_h = interp_lh_cache[ii, ih, iz]
 
-                                lhplus = log_hplus(lz[iz], lq[ii], lh[ih], 0.0, param)
-                                ihl, ihr, varphi_h = interp(lhplus, lh)
-
-
-                                vpr = 0.0 # next period'h value function given (l,k')
-                                for izp in 1:NZ # expectation of next period'h value function
-                                    vpr += prob[iz, izp] * varphi_h * (varphi * v[iip, ihl, ial, izp] + (1.0 - varphi) * v[iip, ihl, iar, izp])
-                                    vpr += prob[iz, izp] * (1.0 - varphi_h) * (varphi * v[iip, ihr, ial, izp] + (1.0 - varphi) * v[iip, ihr, iar, izp])
+                                vpr = 0.0 # Next period's value function given (l, k')
+                                for izp in 1:NZ # Expectation of next period's value function
+                                    pz = prob[iz, izp]
+                                    vpr += pz * (
+                                        varphi_h * (varphi * v[iip, ihl, ial, izp] + (1.0 - varphi) * v[iip, ihl, iar, izp]) + 
+                                        (1.0 - varphi_h) * (varphi * v[iip, ihr, ial, izp] + (1.0 - varphi) * v[iip, ihr, iar, izp])
+                                        )
                                 end
 
                                 vtemp[iap, iip] = util + beta * vpr
@@ -229,8 +238,8 @@ function solve_household(param, prices)
 
                         end
 
-                        # find k' that  solves bellman equation
-                        max_val, max_index = findmax(vtemp2) # subject to k' achieves c>0
+                        # Find k' that solves Bellman equation (subject to k' achieves c > 0)
+                        max_val, max_index = findmax(vtemp2)
                         tv[ii, ih, ia, iz] = max_val
                         iaplus[ii, ih, ia, iz] = max_index
                         aplus[ii, ih, ia, iz] = gridk2[max_index]
@@ -248,8 +257,6 @@ function solve_household(param, prices)
         println("WARNING!! @aiyagari_vfi2.jl VFI: iteration reached max: iter=$iter,e rr=$err")
     end
 
-    # error("stop")
-
     # Return household decisions as a struct
     return (
         aplus=aplus, iaplus=iaplus, pplus=pplus
@@ -262,9 +269,9 @@ function get_distribution(param, dec, prices)
     @unpack aplus, iaplus, pplus = dec
     @unpack r, wage, a, gridk2, tuition = prices
 
-    # calculate stationary distribution
-    m = ones(NI, NH, NA, NZ) / (NI * NH * NA * NZ) # old distribution
-    mea1 = zeros(NI, NH, NA, NZ) # new distribution
+    # Calculate stationary distribution
+    m = ones(NI, NH, NA, NZ) / (NI * NH * NA * NZ) # Old distribution
+    m_new = zeros(NI, NH, NA, NZ)                   # New distribution
     err = 1
     errTol = 0.00001
     maxiter = 2000
@@ -277,22 +284,22 @@ function get_distribution(param, dec, prices)
                 for ih in 1:NH # l
                     for iz in 1:NZ # h
 
-                        # iip = iplus[ii, ih, ia, iz] # index of h'(k,l,h) next gen'h education
+                        # iip = iplus[ii, ih, ia, iz] # Index of h'(k, l, h) next generation's education
                         lhplus = log_hplus(lz[iz], lq[ii], lh[ih], 0.0, param)
                         ihl, ihr, varphi_h = interp(lhplus, lh)
 
-                        # interpolation of policy function 
-                        # split to two grids in a
+                        # Interpolation of policy function
+                        # Split to two grids in a
                         ial, iar, varphi = interp(aplus[ii, ih, ia, iz], a)
 
                         p_help[:] = pplus[ii, ih, ia, iz, :]
 
                         for izp in 1:NZ # l'
                             for iip in 1:NI
-                                mea1[iip, ihl, ial, izp] += p_help[iip] * param.prob[iz, izp] * varphi_h * varphi * m[ii, ih, ia, iz]
-                                mea1[iip, ihl, iar, izp] += p_help[iip] * param.prob[iz, izp] * varphi_h * (1.0 - varphi) * m[ii, ih, ia, iz]
-                                mea1[iip, ihr, ial, izp] += p_help[iip] * param.prob[iz, izp] * (1.0 - varphi_h) * varphi * m[ii, ih, ia, iz]
-                                mea1[iip, ihr, iar, izp] += p_help[iip] * param.prob[iz, izp] * (1.0 - varphi_h) * (1.0 - varphi) * m[ii, ih, ia, iz]
+                                m_new[iip, ihl, ial, izp] += p_help[iip] * param.prob[iz, izp] * varphi_h * varphi * m[ii, ih, ia, iz]
+                                m_new[iip, ihl, iar, izp] += p_help[iip] * param.prob[iz, izp] * varphi_h * (1.0 - varphi) * m[ii, ih, ia, iz]
+                                m_new[iip, ihr, ial, izp] += p_help[iip] * param.prob[iz, izp] * (1.0 - varphi_h) * varphi * m[ii, ih, ia, iz]
+                                m_new[iip, ihr, iar, izp] += p_help[iip] * param.prob[iz, izp] * (1.0 - varphi_h) * (1.0 - varphi) * m[ii, ih, ia, iz]
                             end
                         end
                     end
@@ -300,10 +307,10 @@ function get_distribution(param, dec, prices)
             end
         end
 
-        err = maximum(abs.(mea1 - m))
-        m = copy(mea1)
+        err = maximum(abs.(m_new - m))
+        m = copy(m_new)
         iter += 1
-        mea1 = zeros(NI, NH, NA, NZ)
+        m_new = zeros(NI, NH, NA, NZ)
 
     end
 
@@ -368,7 +375,7 @@ function get_Steadystate(param, icase)
     #  COMPUTE K and r in EQ  #
     # ======================= #
 
-    K0 = 6.8 # initial guess
+    K0 = 6.8 # Initial guess
     L0 = 1.0
 
     err2 = 1
@@ -389,13 +396,13 @@ function get_Steadystate(param, icase)
 
     while (err2 > errTol) && (iter < maxiter)
 
-        # set prices given K/L
+        # Set prices given K/L
         prices = set_prices(param, KL0, land_lost0, avg_income0)
 
-        # solve household problems for decision rules
+        # Solve household problems for decision rules
         dec = solve_household(param, prices)
 
-        # solve stationary distribution for aggregates K and L
+        # Solve stationary distribution for aggregates K and L
         measures = get_distribution(param, dec, prices)
 
         agg = aggregation(param, dec, measures, prices)
@@ -409,11 +416,11 @@ function get_Steadystate(param, icase)
 
         KL1 = K1 / L1
 
-        # err2 =abs(KL0 -  KL1) / abs(KL1) + abs(land_lost1 - land_lost0)
+        # err2 = abs(KL0 - KL1) / abs(KL1) + abs(land_lost1 - land_lost0)
         err2 = abs(avg_income0 - avg_income1) / abs(avg_income0) + abs(land_lost1 - land_lost0)
 
 
-        # UPDATE GUESS AS K0+adj*(K1-K0)
+        # UPDATE GUESS: K0 + adj * (K1 - K0)
 
         println([
             iter,
@@ -483,40 +490,32 @@ function output_gen(param, dec, measures, prices, agg, icase)
     sim = monte_carlo_simulation(param, dec, measures, prices, II)
     gridk0 = prices.a
 
-    # 上位25%の閾値（75パーセンタイル）を求める
+    # Determine the threshold for the top 25% (75th percentile)
     income_threshold = quantile(sim.earnings_sim, 0.75)
 
-    # income が threshold 以上の個人のインデックスを取得
+    # Get indices of individuals whose income is above the threshold
     top25_idx = findall(x -> x >= income_threshold, sim.earnings_sim)
 
-       # その中で、state が 3 または 4 の人の数を数える
+    # Among those, count the number whose state is 3 or 4
     count34 = count(i -> sim.ii_sim[i] in (3, 4), top25_idx)
+    share34 = count34 / length(top25_idx)
 
-        share34 = count34 / length(top25_idx)
+    # Get indices where state is 3 or 4
+    idx_34 = findall(i -> sim.ii_sim[i] in (3, 4), sim.ii_sim)
 
+    # Count the number in the top 25% among those with state 3 or 4
+    count_top25_in_34 = count(i -> sim.earnings_sim[i] >= income_threshold, idx_34)
+    share_top25_in_34 = count_top25_in_34 / length(idx_34)
 
-    # 条件：stateが3または4の人のインデックスを取得
-idx_34 = findall(i -> sim.ii_sim[i] in (3, 4), sim.ii_sim)
+    land_income_sim = r_land * ell ./ (sim.earnings_sim .+ r_land * ell)
 
-# 上位25%に該当する人の数をカウント
-count_top25_in_34 = count(i -> sim.earnings_sim[i] >= income_threshold, idx_34)
+    # Take the mean of land income share for state 1
+    land_income_share_state1 = mean(land_income_sim[sim.ii_sim.==1])
 
-share_top25_in_34 = count_top25_in_34 / length(idx_34)
-
-# error(share_top25_in_34)
-
-# Get indices where state is 1
-# idx_state1 = findall(sim.ii_sim .== 1)
-
-land_income_sim = r_land*ell./(sim.earnings_sim .+ r_land*ell)
-
-# Take the mean of earnings_sim only over those indices
-land_income_share_state1 = mean(land_income_sim[sim.ii_sim .== 1])
-
-
-    r_share = sum(measures.m[1:2, :, :, :])/sum(measures.m[:, :, :, :])
-    un_share = sum(measures.m[4, :, :, :])/sum(measures.m[:, :, :, :])
-    ru_share = sum(measures.m[2, :, :, :])/sum(measures.m[:, :, :, :])
+    r_share = sum(measures.m[1:2, :, :, :]) / sum(measures.m[:, :, :, :])
+    ua_share = sum(measures.m[3, :, :, :]) / sum(measures.m[:, :, :, :])
+    ru_share = sum(measures.m[2, :, :, :]) / sum(measures.m[:, :, :, :])
+    rr_share = sum(measures.m[1, :, :, :]) / sum(measures.m[:, :, :, :])
 
 
     college_thres = percentile(sim.lhp_sim, 90)
@@ -524,18 +523,16 @@ land_income_share_state1 = mean(land_income_sim[sim.ii_sim .== 1])
 
     col_rate = zeros(param.NI)
     for ii in 1:param.NI
-    inds = findall(sim.ii_sim .== ii)  # ii_sim が 1 のインデックスを取得
-
-    # フィルタされた人たちのうち、lhp_sim が college_thres を超える割合
-    count_above = count(i -> sim.lhp_sim[i] > college_thres, inds)
-
-    # 割合（全体に対する比率）
-    col_rate[ii] = count_above / length(inds)
+        inds = findall(sim.ii_sim .== ii)  # Get indices where ii_sim equals ii
+        # Among those, calculate the share whose lhp_sim exceeds the college threshold
+        count_above = count(i -> sim.lhp_sim[i] > college_thres, inds)
+        # Proportion (relative to total in group)
+        col_rate[ii] = count_above / length(inds)
     end
 
 
-    return (kfun0=dec.aplus, pplus=dec.pplus, gridk0=gridk0, KK=agg.meank, share_top25_in_34=share_top25_in_34, 
-    LL=agg.meanL, r_share=r_share, un_share=un_share, ru_share=ru_share, share34=share34, land_income_share_state1=land_income_share_state1)
+    return (kfun0=dec.aplus, pplus=dec.pplus, gridk0=gridk0, KK=agg.meank, share_top25_in_34=share_top25_in_34, land_income_share_state1=land_income_share_state1,
+        LL=agg.meanL, r_share=r_share, ua_share=ua_share, ru_share=ru_share, share34=share34, rr_share=rr_share)
 
 end
 
@@ -543,7 +540,7 @@ function calibration(params_in)
 
     println("------------------------------")
 
-    NMOM = 5
+    NMOM = 6
 
     model = zeros(NMOM)
     data = zeros(NMOM)
@@ -553,10 +550,11 @@ function calibration(params_in)
     # Initialize model and data vectors directly
     params = [
         min(max(params_in[1], 0.0), 0.96),
-        max(params_in[2], 0.0),
+        params_in[2],
         params_in[3],
         params_in[4],
         max(params_in[5], 1e-4),
+        max(params_in[6], 0.0)
     ]
 
     println("parameters")
@@ -565,19 +563,21 @@ function calibration(params_in)
 
     data = [
         3.53,  # K/Y
-        0.584, # 0.445+0.139
-        0.168,
+        0.445, # 0.445+0.139
+        0.248,
         0.139, # 0.144/(1.0-0.584)# 0.139
-        0.734
+        0.734,
+        0.067
     ]
 
     # Set parameters and get steady state results
     param = setParameters(
         beta=params[1],
-        r_land=params[2],
-        zeta=params[3],
-        leftbehindcost=params[4],# sigma_e=params[4]
-        sigma_e=params[5]
+        zeta_rr=params[2],
+        zeta_ua=params[3],
+        zeta_ru=params[4],# sigma_e=params[4]
+        sigma_e=params[5],
+        r_land=params[6]
     )
 
     param, HHdecisions, measures, prices, agg = get_Steadystate(param, 1)
@@ -585,11 +585,12 @@ function calibration(params_in)
 
     # Extract model moments from the output
     model = [
-        output.KK/output.LL*30.0,
-        output.r_share,
-        output.un_share,
+        output.KK / output.LL * 30.0,
+        output.rr_share,
+        output.ua_share,
         output.ru_share,#output.share34#output.ru_share
-        output.share34
+        output.share34,
+        output.land_income_share_state1
     ]
 
     println("MOMENTS")
@@ -612,14 +613,15 @@ function calibration(params_in)
     display(max_dist)
     println("")
 
-        # Prepare labels and changes matrix for DataFrame creation
-        labels = [
-            "K/Y",
-            "rural share",
-            "urban non ag share",
-            "left behind share",#"top 25% in urban"
-            "top 25% in urban"
-        ]
+    # Prepare labels and changes matrix for DataFrame creation
+    labels = [
+        "K/Y",
+        "rural rural share",
+        "urban ag share",
+        "rural urban share",#"top 25% in urban"
+        "top 25% in urban",
+        "land income share in rural"
+    ]
 
     changes = hcat(params, model, data)
     d_changes = round.(changes, digits=4)
@@ -639,12 +641,13 @@ end
 # CALIBRATION
 ######################################################
 
-# # # # Initial guess for the parameters
-initial_guess = [0.30127637159694015,
-2.9789239065449236,
--0.058907996556566346,
-0.28324555678102276,
-0.0719245322280198
+# Initial guess for the parameters
+initial_guess = [0.40987992166424403,
+    -0.2990971845888921,
+    0.11200676783749941,
+    0.3749448694982676,
+    0.17592346799252628,
+    0.04661546513664531
 ]
 
 
