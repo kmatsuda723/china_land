@@ -532,6 +532,7 @@ function output_gen(param, dec, measures, prices, agg, icase)
     land_income_share_state1 = mean(land_income_sim[sim.ii_sim.==1])
 
     r_share = sum(measures.m[1:2, :, :, :]) / sum(measures.m[:, :, :, :])
+    un_share = sum(measures.m[4, :, :, :]) / sum(measures.m[:, :, :, :])
     ua_share = sum(measures.m[3, :, :, :]) / sum(measures.m[:, :, :, :])
     ru_share = sum(measures.m[2, :, :, :]) / sum(measures.m[:, :, :, :])
     rr_share = sum(measures.m[1, :, :, :]) / sum(measures.m[:, :, :, :])
@@ -558,6 +559,24 @@ function output_gen(param, dec, measures, prices, agg, icase)
     share_top10_in_34_cf = count_top10_in_34_cf / length(idx_34)
     # error([share_top10_in_34, share_top10_in_34_cf])
     end
+
+    println("MOMENTS")
+    println("")
+    println("shares of rr, ru, ua, un")
+    display(round(rr_share; digits=4))
+    display(round(ru_share; digits=4))
+    display(round(ua_share; digits=4))
+    display(round(un_share; digits=4))
+    println("")
+    println("urban share of college")
+    display(round(share_top10_in_34; digits=4))
+
+    if icase==1
+    println("")
+    println("validation: urban share of college with rural q")
+    display(round(share_top10_in_34_cf; digits=4))
+    end
+
 
 
     return (kfun0=dec.aplus, pplus=dec.pplus, gridk0=gridk0, KK=agg.meank, share_top25_in_34=share_top25_in_34, land_income_share_state1=land_income_share_state1,
@@ -623,8 +642,6 @@ function calibration(params_in)
         output.land_income_share_state1
     ]
 
-    println("MOMENTS")
-    println("")
 
     # Compute the distance between model and data moments
     for ii in 1:NMOM
@@ -749,7 +766,7 @@ initial_guess = [0.40987992166424403,
 #  MAIN                   #
 # ======================= #
 
-Ncase = 1
+Ncase = 2
 
 # param_help = setPar()
 # @unpack NL, NY, NZ, NP, y = param_help
@@ -766,8 +783,8 @@ for i_case = 1:Ncase
         param = setParameters()
 
     elseif i_case == 2
-        println("case: validation exercise")
-        param = setParameters(income_thres_top10_base=income_thres_top10_base)
+        println("case: phi_a = 0")
+        param = setParameters(phi_a = 0.0)
     end
     param, dec, measures, prices, agg = get_Steadystate(param, i_case)
     output[i_case] = output_gen(param, dec, measures, prices, agg, i_case)
@@ -781,7 +798,7 @@ end
 
 # plot
 plot(output[1].gridk0, output[1].kfun0[1, 1, :, 2], color=:blue, linestyle=:solid, linewidth=2, label=L"hs,l_{low}",
-    title="Assets Policy function", xlabel=L"a", ylabel=L"a'=g(a,l)", xlims=(0.0, 1.0 ), ylims=(0.0, prices.a_u), legend=:topleft)
+    title="Assets Policy function", xlabel=L"a", ylabel=L"a'=g(a,l)", xlims=(0.0, 1.0 ), ylims=(0.0, 1.0), legend=:topleft)
 plot!(output[1].gridk0, output[1].kfun0[1, 4, :, 2], color=:red, linestyle=:solid, linewidth=2, label=L"hs,l_{mid}")
 plot!(output[1].gridk0, output[1].kfun0[1, 7, :, 2], color=:black, linestyle=:solid, linewidth=2, label=L"hs,l_{high}")
 plot!(output[1].gridk0, output[1].kfun0[1, 1, :, 4], color=:blue, linestyle=:dash, linewidth=2, label=L"cg,l_{mid}")
