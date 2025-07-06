@@ -551,7 +551,7 @@ function output_gen(param, dec, measures, prices, agg, icase)
     end
 
     # display(income_thres_top10)
-
+    share_top10_in_34_cf = 0.0
     if icase==1
         sim = monte_carlo_simulation(param, dec, measures, prices, II, 1)
             # Count the number in the top 25% among those with state 3 or 4
@@ -766,7 +766,7 @@ initial_guess = [0.40987992166424403,
 #  MAIN                   #
 # ======================= #
 
-Ncase = 2
+Ncase = 3
 
 # param_help = setPar()
 # @unpack NL, NY, NZ, NP, y = param_help
@@ -785,6 +785,9 @@ for i_case = 1:Ncase
     elseif i_case == 2
         println("case: phi_a = 0")
         param = setParameters(phi_a = 0.0)
+    elseif i_case == 3
+        println("case: phi_a = 0 and r_land increase by 50%")
+        param = setParameters(phi_a = 0.0, r_land=0.04661546513664531*1.5)
     end
     param, dec, measures, prices, agg = get_Steadystate(param, i_case)
     output[i_case] = output_gen(param, dec, measures, prices, agg, i_case)
