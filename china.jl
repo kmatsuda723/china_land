@@ -17,6 +17,96 @@ Random.seed!(1234)  # Set random seed
 
 include("toolbox.jl")
 
+# param = setParameters(
+#         beta=params[1],
+#         zeta_rr=params[2],
+#         zeta_ua=params[3],
+#         zeta_ru=params[4],# sigma_e=params[4]
+#         sigma_e=params[5],
+#         r_land=params[6]
+#     )
+
+# function setParameters(;
+#     mu=2.0,             # risk aversion (=3 baseline)             
+#     beta=0.4260874772544608,            # subjective discount factor 
+#     delta=0.08,            # depreciation
+#     alpha=0.36,            # capital'h share of income
+#     b=0.0,             # borrowing limit
+#     NH=7,             # number of discretized states
+#     rho=0.6,           # first-order autoregressive coefficient
+#     gamma_h=0.0,
+#     gamma_z=0.12,
+#     gamma_q=0.1,
+#     zeta_ua=0.06394650928365665,
+#     r_land=0.11569881101974472,
+#     phi_a=0.5,
+#     delta_n=0.27,
+#     sigma_e=0.19935604769043203,
+#     zeta_ru=0.46726019527600726,
+#     zeta_rr=-0.25721928801561034,
+#     income_thres_top10_base=0.0,
+#     sig=1.0           # intermediate value to calculate sigma (=0.4 BASE)
+# )
+
+#     phi_n = phi_a + delta_n
+#     # ================================================= #
+#     #  COMPUTE TRANSITION MATRIX OF LABOR PRODUCTIVITY  #
+#     # ================================================= #
+
+#     # ROUTINE tauchen.param TO COMPUTE TRANSITION MATRIX, GRID OF AN AR(1) AND
+#     # STATIONARY DISTRIBUTION
+#     # Approximate labor endowment shocks with seven-state Markov chain
+#     # log(s_{t}) = rho*log(s_{t-1}) + e_{t}
+#     # e_{t} ~ N(0, sig^2)
+
+#     M = 2.0
+#     NZ = 5
+
+#     lz, prob, invdist = tauchen(NZ, rho, sqrt(1.0 - rho^2), M)
+#     z = exp.(lz)
+
+#     lh = collect(range(-3.0, stop=3.0, length=NH))
+#     h = exp.(lh)
+
+#     # ================================================= #
+#     #  HUMAN CAPITAL INVESTMENT                         #
+#     # ================================================= #
+
+#     # ii = 1: rr (earner+kid in rural), ii = 2: ru (kid in rural, earner in urban)
+#     # ii = 3: ua (both urban agricultural hukou), ii = 4: un (both urban non-agricultural hukou)
+
+#     # Tuition by group
+#     NI = 4
+#     NA = 30                                     # Grid size for STATE
+#     Nk2 = 30                                    # Grid size for CONTROL
+
+
+#     lq = zeros(NI)
+#     lq[1] = log(0.72)
+#     lq[2] = log(0.72)
+#     lq[3] = log(0.88)
+#     lq[4] = log(1.0)
+
+#     mv_cost = zeros(NI, NI)
+#     # for ii in 1:NI
+#     #     mv_cost[ii, NI] = zeta_ua
+#     # end
+
+#     land_risk = zeros(NI)
+
+#     land_risk[3] = phi_a
+#     land_risk[4] = phi_n
+
+#     dutil = zeros(NI)
+#     dutil[3] = zeta_ua
+#     dutil[2] = zeta_ru
+#     dutil[1] = zeta_rr
+
+#     return (mu=mu, beta=beta, delta=delta, alpha=alpha, b=b, gamma_z=gamma_z, dutil=dutil, zeta_rr=zeta_rr,
+#         gamma_q=gamma_q, gamma_h=gamma_h, NH=NH, h=h, z=z, lh=lh, lz=lz, lq=lq, prob=prob, income_thres_top10_base=income_thres_top10_base,
+#         NA=NA, Nk2=Nk2, NZ=NZ, NI=NI, mv_cost=mv_cost, land_risk=land_risk, r_land=r_land, sigma_e=sigma_e)
+# end
+
 function setParameters(;
     mu=2.0,             # risk aversion (=3 baseline)             
     beta=0.40987992166424403,            # subjective discount factor 
@@ -509,16 +599,13 @@ function output_gen(param, dec, measures, prices, agg, icase)
     share34 = count34 / length(top25_idx)
 
     # Get indices where state is 3 or 4
+    idx_12 = findall(i -> sim.ii_sim[i] in (1, 2), sim.ii_sim)
     idx_34 = findall(i -> sim.ii_sim[i] in (3, 4), sim.ii_sim)
 
     # Count the number in the top 25% among those with state 3 or 4
     count_top25_in_34 = count(i -> sim.earnings_sim[i] >= income_threshold, idx_34)
     share_top25_in_34 = count_top25_in_34 / length(idx_34)
 
-    # Get indices where state is 1 or 2
-    idx_12 = findall(i -> sim.ii_sim[i] in (3, 4), sim.ii_sim)
-
-    
 
     # # Count the number in the top 25% among those with state 3 or 4
     count_top10_in_34 = count(i -> sim.lhp_sim[i] >= income_thres_top10, idx_34)
@@ -560,6 +647,9 @@ function output_gen(param, dec, measures, prices, agg, icase)
     # error([share_top10_in_34, share_top10_in_34_cf])
     end
 
+    avg_earnings_rural = mean(sim.earnings_sim[(sim.ii_sim .== 1)])
+    avg_earnings_urban = mean(sim.earnings_sim[(sim.ii_sim .== 2) .| (sim.ii_sim .== 3) .| (sim.ii_sim .== 4)])
+
     println("MOMENTS")
     println("")
     println("shares of rr, ru, ua, un")
@@ -570,6 +660,9 @@ function output_gen(param, dec, measures, prices, agg, icase)
     println("")
     println("urban share of college")
     display(round(share_top10_in_34; digits=4))
+    println("")
+    println("rural/urban avg income")
+    display(round(avg_earnings_rural/avg_earnings_urban; digits=4))
 
     if icase==1
     println("")
@@ -616,7 +709,7 @@ function calibration(params_in)
         0.248,
         0.139, # 0.144/(1.0-0.584)# 0.139
         0.734,
-        0.067
+        0.15 #0.067
     ]
 
     # Set parameters and get steady state results
