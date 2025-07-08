@@ -52,85 +52,86 @@ include("types.jl")
 #
 
 function setParameters(;
-    mu=2.0,             # risk aversion (=3 baseline)             
-    beta=0.40987992166424403,            # subjective discount factor 
-    delta=0.08,            # depreciation
-    alpha=0.36,            # capital'h share of income
-    b=0.0,             # borrowing limit
-    NH=7,             # number of discretized states
-    rho=0.6,           # first-order autoregressive coefficient
-    gamma_h=0.0,
-    gamma_z=0.12,
-    gamma_q=0.1,
-    zeta_ua=0.11200676783749941,
-    r_land=0.04661546513664531,
-    phi_a=0.5,
-    delta_n=0.27,
-    sigma_e=0.17592346799252628,
-    zeta_ru=0.3749448694982676,
-    zeta_rr=-0.2990971845888921,
-    income_thres_top10_base=0.0,
-    sig=1.0           # intermediate value to calculate sigma (=0.4 BASE)
+    mu=2.0,                    # Risk aversion coefficient (baseline = 3)
+    beta=0.49777869220275955,  # Subjective discount factor
+    delta=0.08,                # Depreciation rate
+    alpha=0.36,                # Capital's share of income
+    b=0.0,                     # Borrowing limit
+    NH=10,                      # Number of discretized labor productivity states
+    rho=0.6,                   # AR(1) coefficient for labor productivity process
+    gamma_h=0.0,               # Parameter for additional labor-related processes (unused here)
+    gamma_z=0.12,              # Parameter for additional shock process (unused here)
+    gamma_q=0.1,               # Parameter for another process (unused here)
+    zeta_ua=0.09714970304225913,  # Utility discount or cost parameter for urban agricultural group
+    r_land=0.047434872244243725,    # Land return rate
+    phi_a=0.5,                 # Parameter related to land risk for agricultural hukou
+    delta_n=0.27,              # Additional land risk parameter
+    sigma_e=0.21509367659714868,  # Scale parameter for idiosyncratic shocks
+    zeta_ru=0.31666396394931695,    # Utility discount or cost parameter for rural urban group
+    zeta_rr=-0.3479186418550472,   # Utility discount or cost parameter for rural rural group
+    income_thres_top10_base=0.0,   # Base threshold for income top 10%
+    sig=1.0                    # Std deviation of shock noise for Tauchen method (0.4 baseline)
 )
 
+    # Effective land risk for non-agricultural urban hukou
     phi_n = phi_a + delta_n
-    # ================================================= #
-    #  COMPUTE TRANSITION MATRIX OF LABOR PRODUCTIVITY  #
-    # ================================================= #
 
-    # ROUTINE tauchen.p TO COMPUTE TRANSITION MATRIX, GRID OF AN AR(1) AND
-    # STATIONARY DISTRIBUTION
-    # Approximate labor endowment shocks with seven-state Markov chain
-    # log(s_{t}) = rho*log(s_{t-1}) + e_{t}
-    # e_{t} ~ N(0, sig^2)
+    # ========================================================= #
+    #  COMPUTE TRANSITION MATRIX OF LABOR PRODUCTIVITY (TAUCHEN) #
+    # ========================================================= #
+    # Using Tauchen method to discretize AR(1) process for labor shocks:
+    #   log(s_t) = rho * log(s_{t-1}) + e_t, where e_t ~ N(0, sig^2)
+    # Outputs: lz (grid), prob (transition matrix), invdist (stationary distribution)
 
-    M = 2.0
-    NZ = 5
+    M = 2.0  # Width parameter for Tauchen grid
+    NZ = 5   # Number of states in labor shock grid
 
     lz, prob, invdist = tauchen(NZ, rho, sqrt(1.0 - rho^2), M)
-    z = exp.(lz)
+    z = exp.(lz)  # Convert from logs to levels
 
-    lh = collect(range(-3.0, stop=3.0, length=NH))
-    h = exp.(lh)
+    # Discretized human capital (labor supply) grid
+    lh = collect(range(-0.5, stop=0.5, length=NH))
+    h = exp.(lh)  # Levels
 
-    # ================================================= #
-    #  HUMAN CAPITAL INVESTMENT                         #
-    # ================================================= #
+    # ========================================================= #
+    #  HUMAN CAPITAL INVESTMENT GROUPS                          #
+    # ========================================================= #
+    # Group codes for educational / hukou types:
+    #   1: rr (earner + kid in rural)
+    #   2: ru (kid in rural, earner in urban)
+    #   3: ua (both urban agricultural hukou)
+    #   4: un (both urban non-agricultural hukou)
 
-    # ii = 1: rr (earner+kid in rural), ii = 2: ru (kid in rural, earner in urban)
-    # ii = 3: ua (both urban agricultural hukou), ii = 4: un (both urban non-agricultural hukou)
+    NI = 4          # Number of groups
+    NA = 30         # Grid size for asset state (k)
+    NA2 = 30        # Grid size for asset control (k')
 
-    # Tuition by group
-    NI = 4
-    NA = 30                                     # Grid size for STATE
-    NA2 = 30                                    # Grid size for CONTROL
-
-
+    # Log of group-specific quality/skill level (q)
     lq = zeros(NI)
     lq[1] = log(0.72)
     lq[2] = log(0.72)
     lq[3] = log(0.88)
     lq[4] = log(1.0)
 
+    # Mobility cost matrix (currently zeros)
     mv_cost = zeros(NI, NI)
-    # for ii in 1:NI
-    #     mv_cost[ii, NI] = zeta_ua
-    # end
 
+    # Land risk by group
     land_risk = zeros(NI)
-
     land_risk[3] = phi_a
     land_risk[4] = phi_n
 
+    # Utility discount or cost by group
     dutil = zeros(NI)
     dutil[3] = zeta_ua
     dutil[2] = zeta_ru
     dutil[1] = zeta_rr
 
-return Params(
-    mu, beta, delta, alpha, b, gamma_z, gamma_q, gamma_h, NH, h, z, lh, lz, lq, prob,
-    income_thres_top10_base, NA, NA2, NZ, NI, mv_cost, land_risk, r_land, sigma_e, dutil, zeta_rr
-)
+    return Params(
+        mu, beta, delta, alpha, b, gamma_z, gamma_q, gamma_h, NH,
+        h, z, lh, lz, lq, prob, income_thres_top10_base,
+        NA, NA2, NZ, NI, mv_cost, land_risk, r_land, sigma_e, dutil, zeta_rr
+    )
 end
 
 function log_hplus(logz, logq, logh, logxi, p::Params)
@@ -150,7 +151,7 @@ function set_prices(p::Params, KL, land_lost, avg_income)::Prices
     phi = p.b
 
     # Asset grid for state variables
-    a_u = 1.0
+    a_u = 0.5
     a_l = -phi
     curvK = 1.1
 
@@ -275,7 +276,7 @@ function solve_household(p::Params, prices::Prices)
     return Dec(aplus, iaplus, pplus)
 end
 
-function get_distribution(p::Params, dec::Dec, prices::Prices)::Measures
+function get_distribution(p::Params, dec::Dec, prices::Prices)::Meas
     m = ones(p.NI, p.NH, p.NA, p.NZ) / (p.NI * p.NH * p.NA * p.NZ)  # Initial guess of distribution
     m_new = zeros(p.NI, p.NH, p.NA, p.NZ)                          # Updated distribution
 
@@ -325,11 +326,11 @@ function get_distribution(p::Params, dec::Dec, prices::Prices)::Measures
         println("WARNING!! get_distribution: iteration reached max: iter = $iter, err = $err")
     end
 
-    return Measures(m)
+    return Meas(m)
 end
 
-function aggregation(p::Params, dec::Dec, measures::Measures, prices::Prices)::Agg
-    m = measures.m
+function aggregation(p::Params, dec::Dec, meas::Meas, prices::Prices)::Agg
+    m = meas.m
 
     meanL = 0.0
     land_lost = 0.0
@@ -383,7 +384,7 @@ function get_Steadystate(p::Params, icase::Int)
     # Preallocate
     prices = Prices(0.0, zeros(p.NI), 0.0, zeros(p.NA), zeros(p.NA2), 0.0, 0.0, zeros(p.NI), 0.0)
     dec = Dec(zeros(p.NI, p.NH, p.NA, p.NZ), zeros(p.NI, p.NH, p.NA, p.NZ), zeros(p.NI, p.NH, p.NA, p.NZ, p.NI))
-    measures = Measures(zeros(p.NI, p.NH, p.NA, p.NZ))
+    meas = Meas(zeros(p.NI, p.NH, p.NA, p.NZ))
     agg = Agg(0.0, 0.0, 0.0, 0.0, zeros(p.NI), zeros(p.NZ), zeros(p.NA), zeros(p.NH))
 
     while err > errTol && iter < maxiter
@@ -391,8 +392,8 @@ function get_Steadystate(p::Params, icase::Int)
 
         prices = set_prices(p, KL, land_lost, avg_income)
         dec = solve_household(p, prices)
-        measures = get_distribution(p, dec, prices)
-        agg = aggregation(p, dec, measures, prices)
+        meas = get_distribution(p, dec, prices)
+        agg = aggregation(p, dec, meas, prices)
 
         # Update values
         KL_new = agg.meank / agg.meanL
@@ -417,10 +418,10 @@ function get_Steadystate(p::Params, icase::Int)
         println("WARNING: did not converge. err = $err")
     end
 
-    return p, dec, measures, prices, agg
+    return p, dec, meas, prices, agg
 end
 
-function monte_carlo_simulation(p::Params, dec::Dec, measures::Measures, prices::Prices, NN, icase_sim)
+function monte_carlo_simulation(p::Params, dec::Dec, meas::Meas, prices::Prices, NN, icase_sim)
     @unpack h, lz, lq, lh, r_land = p
     @unpack a, ell = prices
 
@@ -430,7 +431,7 @@ function monte_carlo_simulation(p::Params, dec::Dec, measures::Measures, prices:
     ih_sim = zeros(Int, NN)
 
     # Initialize storage for household trajectories
-    initial_states = sample_states_from_distribution(measures.m, NN)
+    initial_states = sample_states_from_distribution(meas.m, NN)
     a_sim, h_sim, z_sim, wage_sim, earnings_sim, lhp_sim = zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN)
 
     Threads.@threads for i in 1:NN
@@ -453,7 +454,7 @@ end
 
 
 
-function output_gen(p::Params, dec::Dec, measures::Measures, prices::Prices, agg, icase)
+function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
     @unpack r_land, income_thres_top10_base = p
     @unpack ell = prices
 
@@ -464,7 +465,7 @@ function output_gen(p::Params, dec::Dec, measures::Measures, prices::Prices, agg
 
     II = 50000
 
-    sim = monte_carlo_simulation(p::Params, dec, measures, prices, II, 0)
+    sim = monte_carlo_simulation(p::Params, dec, meas, prices, II, 0)
     gridk0 = prices.a
 
     # Determine the threshold for the top 25% (75th percentile)
@@ -500,11 +501,11 @@ function output_gen(p::Params, dec::Dec, measures::Measures, prices::Prices, agg
     # Take the mean of land income share for state 1
     land_income_share_state1 = mean(land_income_sim[sim.ii_sim.==1])
 
-    r_share = sum(measures.m[1:2, :, :, :]) / sum(measures.m[:, :, :, :])
-    un_share = sum(measures.m[4, :, :, :]) / sum(measures.m[:, :, :, :])
-    ua_share = sum(measures.m[3, :, :, :]) / sum(measures.m[:, :, :, :])
-    ru_share = sum(measures.m[2, :, :, :]) / sum(measures.m[:, :, :, :])
-    rr_share = sum(measures.m[1, :, :, :]) / sum(measures.m[:, :, :, :])
+    r_share = sum(meas.m[1:2, :, :, :]) / sum(meas.m[:, :, :, :])
+    un_share = sum(meas.m[4, :, :, :]) / sum(meas.m[:, :, :, :])
+    ua_share = sum(meas.m[3, :, :, :]) / sum(meas.m[:, :, :, :])
+    ru_share = sum(meas.m[2, :, :, :]) / sum(meas.m[:, :, :, :])
+    rr_share = sum(meas.m[1, :, :, :]) / sum(meas.m[:, :, :, :])
 
 
     college_thres = percentile(sim.lhp_sim, 90)
@@ -522,7 +523,7 @@ function output_gen(p::Params, dec::Dec, measures::Measures, prices::Prices, agg
     # display(income_thres_top10)
     share_top10_in_34_cf = 0.0
     if icase==1
-        sim = monte_carlo_simulation(p, dec, measures, prices, II, 1)
+        sim = monte_carlo_simulation(p, dec, meas, prices, II, 1)
             # Count the number in the top 25% among those with state 3 or 4
     count_top10_in_34_cf = count(i -> sim.lhp_sim[i] >= income_thres_top10, idx_34)
     share_top10_in_34_cf = count_top10_in_34_cf / length(idx_34)
@@ -591,7 +592,7 @@ function calibration(params_in)
         0.248,
         0.139, # 0.144/(1.0-0.584)# 0.139
         0.734,
-        0.15 #0.067
+        0.067
     ]
 
     # Set parameters and get steady state results
@@ -604,8 +605,8 @@ function calibration(params_in)
         r_land=params[6]
     )
 
-    p, HHdecisions, measures, prices, agg = get_Steadystate(p, 1)
-    output = output_gen(p, HHdecisions, measures, prices, agg, 1)
+    p, HHdecisions, meas, prices, agg = get_Steadystate(p, 1)
+    output = output_gen(p, HHdecisions, meas, prices, agg, 1)
 
     # Extract model moments from the output
     model = [
@@ -683,8 +684,8 @@ function calibration_phi_a(params_in)
 
     # output = get_Steadystate(p, 1)
 
-    p, HHdecisions, measures, prices, agg = get_Steadystate(p, 1)
-    output = output_gen(p, HHdecisions, measures, prices, agg, 1)
+    p, HHdecisions, meas, prices, agg = get_Steadystate(p, 1)
+    output = output_gen(p, HHdecisions, meas, prices, agg, 1)
 
     # model[1] = output.elas_I_y
     model[1] = output.ru_share
@@ -719,12 +720,12 @@ end
 ######################################################
 
 # Initial guess for the parameters
-initial_guess = [0.40987992166424403,
-    -0.2990971845888921,
-    0.11200676783749941,
-    0.3749448694982676,
-    0.17592346799252628,
-    0.04661546513664531
+initial_guess = [0.49777869220275955,
+ -0.3479186418550472,
+  0.09714970304225913,
+  0.31666396394931695,
+  0.21509367659714868,
+  0.047434872244243725
 ]
 
 
@@ -741,7 +742,7 @@ initial_guess = [0.40987992166424403,
 #  MAIN                   #
 # ======================= #
 
-Ncase = 3
+Ncase = 2
 
 # param_help = setPar()
 # @unpack NL, NY, NZ, NP, y = param_help
@@ -764,8 +765,8 @@ for i_case = 1:Ncase
         println("case: phi_a = 0 and r_land increase by 50%")
         p = setParameters(phi_a = 0.0, r_land=0.04661546513664531*1.5)
     end
-    p, dec, measures, prices, agg = get_Steadystate(p, i_case)
-    output[i_case] = output_gen(p, dec, measures, prices, agg, i_case)
+    p, dec, meas, prices, agg = get_Steadystate(p, i_case)
+    output[i_case] = output_gen(p, dec, meas, prices, agg, i_case)
 
     if i_case == 1
         income_thres_top10_base = output[i_case].income_thres_top10

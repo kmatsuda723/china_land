@@ -45,7 +45,7 @@ struct Dec
     pplus::Array{Float64, 5}
 end
 
-struct Measures
+struct Meas
     m::Array{Float64, 4}  # NI × NH × NA × NZ
 end
 
