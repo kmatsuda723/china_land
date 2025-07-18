@@ -155,7 +155,7 @@ function set_prices(p::Params, KL, land_lost, avg_income)::Prices
     tuition[3] = 24151.0 / 30333.0 / 30 * avg_income
     tuition[4] = 54728.0 / 30333.0 / 30 * avg_income
 
-    return Prices(r, wage, phi, a, gridk2, ell, avg_income, tuition, a_u)
+    return Prices(r, wage, phi, a, gridk2, ell, avg_income, tuition, a_u, KL, land_lost)
 end
 
 
@@ -345,12 +345,21 @@ function aggregation(p::Params, dec::Dec, meas::Meas, prices::Prices)::Agg
     )
 end
 
-function get_Steadystate(p::Params, icase::Int)
+function get_Steadystate(p::Params, icase::Int; guess_base::Union{Guess_base,Nothing}=nothing)
 
     # Initial values
     KL = 6.8     # Capital-labor ratio guess
     land_lost = 0.3
     avg_income = 2.8
+
+    if icase == 3
+        if guess_base === nothing
+            error("guess_base must be provided for icase == 3")
+        end
+        KL = guess_base.KL
+        land_lost = guess_base.land_lost
+        avg_income = guess_base.avg_income
+    end
 
     err = 1.0
     errTol = 1e-2
@@ -359,7 +368,7 @@ function get_Steadystate(p::Params, icase::Int)
     adj = 0.2
 
     # Preallocate
-    prices = Prices(0.0, zeros(p.NI), 0.0, zeros(p.NA), zeros(p.NA2), 0.0, 0.0, zeros(p.NI), 0.0)
+    prices = Prices(0.0, zeros(p.NI), 0.0, zeros(p.NA), zeros(p.NA2), 0.0, 0.0, zeros(p.NI), 0.0, 0.0, 0.0)
     dec = Dec(zeros(p.NI, p.NH, p.NA, p.NZ), zeros(p.NI, p.NH, p.NA, p.NZ), zeros(p.NI, p.NH, p.NA, p.NZ, p.NI))
     meas = Meas(zeros(p.NI, p.NH, p.NA, p.NZ))
     agg = Agg(0.0, 0.0, 0.0, 0.0, zeros(p.NI), zeros(p.NZ), zeros(p.NA), zeros(p.NH))
@@ -382,13 +391,20 @@ function get_Steadystate(p::Params, icase::Int)
 
         # Print diagnostics
         println((iter, round(avg_income, digits=4), round(avg_income_new, digits=4),
-                      round(land_lost, digits=4), round(land_lost_new, digits=4),
-                      round(err, digits=4)))
+            round(land_lost, digits=4), round(land_lost_new, digits=4),
+            round(err, digits=4)))
+
+        # Partial eq
+        if icase == 3
+            break
+        end
 
         # Update guesses with damping
         avg_income += adj * (avg_income_new - avg_income)
         land_lost += adj * (land_lost_new - land_lost)
         KL += adj * (KL_new - KL)
+
+
     end
 
     if iter == maxiter
@@ -420,7 +436,7 @@ function monte_carlo_simulation(p::Params, dec::Dec, meas::Meas, prices::Prices,
         h_sim[i] = h[ih_sim[i]]
         earnings_sim[i] = wage_sim[i] * h_sim[i]
         lhp_sim[i] = log_hplus(lz[iz_sim[i]], lq[ii_sim[i]], lh[ih_sim[i]], 0.0, p)
-        if icase_sim==1 && (ii_sim[i]==3 || ii_sim[i]==4)
+        if icase_sim == 1 && (ii_sim[i] == 3 || ii_sim[i] == 4)
             lhp_sim[i] = log_hplus(lz[iz_sim[i]], lq[1], lh[ih_sim[i]], 0.0, p)
         end
     end
@@ -499,16 +515,16 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
 
     # display(income_thres_top10)
     share_top10_in_34_cf = 0.0
-    if icase==1
+    if icase == 1
         sim = monte_carlo_simulation(p, dec, meas, prices, II, 1)
-            # Count the number in the top 25% among those with state 3 or 4
-    count_top10_in_34_cf = count(i -> sim.lhp_sim[i] >= income_thres_top10, idx_34)
-    share_top10_in_34_cf = count_top10_in_34_cf / length(idx_34)
-    # error([share_top10_in_34, share_top10_in_34_cf])
+        # Count the number in the top 25% among those with state 3 or 4
+        count_top10_in_34_cf = count(i -> sim.lhp_sim[i] >= income_thres_top10, idx_34)
+        share_top10_in_34_cf = count_top10_in_34_cf / length(idx_34)
+        # error([share_top10_in_34, share_top10_in_34_cf])
     end
 
-    avg_earnings_rural = mean(sim.earnings_sim[(sim.ii_sim .== 1)])
-    avg_earnings_urban = mean(sim.earnings_sim[(sim.ii_sim .== 2) .| (sim.ii_sim .== 3) .| (sim.ii_sim .== 4)])
+    avg_earnings_rural = mean(sim.earnings_sim[(sim.ii_sim.==1)])
+    avg_earnings_urban = mean(sim.earnings_sim[(sim.ii_sim.==2).|(sim.ii_sim.==3).|(sim.ii_sim.==4)])
 
     println("MOMENTS")
     println("")
@@ -522,12 +538,12 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
     display(round(share_top10_in_34; digits=4))
     println("")
     println("rural/urban avg income")
-    display(round(avg_earnings_rural/avg_earnings_urban; digits=4))
+    display(round(avg_earnings_rural / avg_earnings_urban; digits=4))
 
-    if icase==1
-    println("")
-    println("validation: urban share of college with rural q")
-    display(round(share_top10_in_34_cf; digits=4))
+    if icase == 1
+        println("")
+        println("validation: urban share of college with rural q")
+        display(round(share_top10_in_34_cf; digits=4))
     end
 
 
@@ -658,9 +674,6 @@ function calibration_phi_a(params_in)
     data[1] = 0.13570229260920416 * (1.0 - 0.3)
 
     p = setParameters(phi_a=params[1]) # check the parameters above
-
-    # output = get_Steadystate(p, 1)
-
     p, HHdecisions, meas, prices, agg = get_Steadystate(p, 1)
     output = output_gen(p, HHdecisions, meas, prices, agg, 1)
 
@@ -705,11 +718,11 @@ end
 #   0.047434872244243725
 # ]
 initial_guess = [0.5159784284016175,
- -0.2825947270401527,
- -0.11330187603883306,
-  0.25515986986304473,
-  0.19336480726308442,
-  0.5249142987075832
+    -0.2825947270401527,
+    -0.11330187603883306,
+    0.25515986986304473,
+    0.19336480726308442,
+    0.5249142987075832
 ]
 
 
@@ -726,42 +739,48 @@ initial_guess = [0.5159784284016175,
 #  MAIN                   #
 # ======================= #
 
-Ncase = 2
 
-# param_help = setPar()
-# @unpack NL, NY, NZ, NP, y = param_help
+function main()
+    Ncase = 3
+    output = Vector{NamedTuple}(undef, Ncase)
+    income_thres_top10_base = 0.0
+    guess_base = nothing
 
-output = Vector{NamedTuple}(undef, Ncase)
-income_thres_top10_base = 0.0
+    for i_case in 1:Ncase
+        # set parameters
+        p = if i_case == 1
+            println("case: benchmark")
+            setParameters()
+        elseif i_case == 2
+            println("case: phi_a = 0")
+            setParameters(phi_a=0.0)
+        elseif i_case == 3
+            println("case: phi_a = 0 PE")
+            setParameters(phi_a=0.0)
+        end
 
-for i_case = 1:Ncase
-    global income_thres_top10_base
+        if i_case == 1
+            p, dec, meas, prices, agg = get_Steadystate(p, i_case)
+        else
+            p, dec, meas, prices, agg = get_Steadystate(p, i_case; guess_base=guess_base)
+        end
+        output[i_case] = output_gen(p, dec, meas, prices, agg, i_case)
 
-    # set parameters
-    if i_case == 1
-        println("case: benchmark")
-        p = setParameters()
-
-    elseif i_case == 2
-        println("case: phi_a = 0")
-        p = setParameters(phi_a = 0.0)
-    elseif i_case == 3
-        println("case: phi_a = 0 and r_land increase by 50%")
-        p = setParameters(phi_a = 0.0, r_land=0.04661546513664531*1.5)
+        if i_case == 1
+            income_thres_top10_base = output[i_case].income_thres_top10
+            guess_base = Guess_base(prices.KL, prices.land_lost, prices.avg_income)
+        end
     end
-    p, dec, meas, prices, agg = get_Steadystate(p, i_case)
-    output[i_case] = output_gen(p, dec, meas, prices, agg, i_case)
 
-    if i_case == 1
-        income_thres_top10_base = output[i_case].income_thres_top10
-    end
-
+    return output, income_thres_top10_base
 end
+
+output, income_thres_top10_base = main()
 
 
 # plot
 plot(output[1].gridk0, output[1].kfun0[1, 1, :, 2], color=:blue, linestyle=:solid, linewidth=2, label=L"hs,l_{low}",
-    title="Assets Policy function", xlabel=L"a", ylabel=L"a'=g(a,l)", xlims=(0.0, 1.0 ), ylims=(0.0, 1.0), legend=:topleft)
+    title="Assets Policy function", xlabel=L"a", ylabel=L"a'=g(a,l)", xlims=(0.0, 1.0), ylims=(0.0, 1.0), legend=:topleft)
 plot!(output[1].gridk0, output[1].kfun0[1, 4, :, 2], color=:red, linestyle=:solid, linewidth=2, label=L"hs,l_{mid}")
 plot!(output[1].gridk0, output[1].kfun0[1, 7, :, 2], color=:black, linestyle=:solid, linewidth=2, label=L"hs,l_{high}")
 plot!(output[1].gridk0, output[1].kfun0[1, 1, :, 4], color=:blue, linestyle=:dash, linewidth=2, label=L"cg,l_{mid}")
@@ -770,7 +789,7 @@ plot!(output[1].gridk0, output[1].kfun0[1, 7, :, 4], color=:black, linestyle=:da
 savefig("figures/fig_kfun.pdf")
 
 plot(output[1].gridk0, output[1].pplus[1, 4, :, 3, 1], color=:blue, linestyle=:solid, linewidth=2, label=L"rural, rural",
-    title="Category Policy function", xlabel=L"a", ylabel=L"a'=g(a,l)", xlims=(0.0, 1.0 ), ylims=(0, 1), legend=:topleft)
+    title="Category Policy function", xlabel=L"a", ylabel=L"a'=g(a,l)", xlims=(0.0, 1.0), ylims=(0, 1), legend=:topleft)
 plot!(output[1].gridk0, output[1].pplus[1, 4, :, 3, 2], color=:red, linestyle=:solid, linewidth=2, label=L"rural, urban")
 plot!(output[1].gridk0, output[1].pplus[1, 4, :, 3, 3], color=:black, linestyle=:solid, linewidth=2, label=L"urban, ag")
 plot!(output[1].gridk0, output[1].pplus[1, 4, :, 3, 4], color=:blue, linestyle=:dash, linewidth=2, label=L"urban, nonag")

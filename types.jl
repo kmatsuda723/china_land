@@ -37,6 +37,8 @@ struct Prices
     avg_income::Float64
     tuition::Vector{Float64}
     a_u::Float64
+    KL::Float64
+    land_lost::Float64
 end
 
 struct Dec
@@ -58,4 +60,10 @@ struct Agg
     mass_z::Vector{Float64}
     mass_a::Vector{Float64}
     mass_h::Vector{Float64}
+end
+
+struct Guess_base
+    KL::Float64
+    land_lost::Float64
+    avg_income::Float64
 end
