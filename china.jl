@@ -27,33 +27,10 @@ include("types.jl")
 #         r_land=params[6]
 #     )
 
-# function setParameters(;
-#     mu=2.0,             # risk aversion (=3 baseline)             
-#     beta=0.4260874772544608,            # subjective discount factor 
-#     delta=0.08,            # depreciation
-#     alpha=0.36,            # capital'h share of income
-#     b=0.0,             # borrowing limit
-#     NH=7,             # number of discretized states
-#     rho=0.6,           # first-order autoregressive coefficient
-#     gamma_h=0.0,
-#     gamma_z=0.12,
-#     gamma_q=0.1,
-#     zeta_ua=0.06394650928365665,
-#     r_land=0.11569881101974472,
-#     phi_a=0.5,
-#     delta_n=0.27,
-#     sigma_e=0.19935604769043203,
-#     zeta_ru=0.46726019527600726,
-#     zeta_rr=-0.25721928801561034,
-#     income_thres_top10_base=0.0,
-#     sig=1.0           # intermediate value to calculate sigma (=0.4 BASE)
-# )
-
-#
 
 function setParameters(;
     mu=2.0,                    # Risk aversion coefficient (baseline = 3)
-    beta=0.49777869220275955,  # Subjective discount factor
+    beta=0.5159784284016175,  # Subjective discount factor
     delta=0.08,                # Depreciation rate
     alpha=0.36,                # Capital's share of income
     b=0.0,                     # Borrowing limit
@@ -62,13 +39,13 @@ function setParameters(;
     gamma_h=0.0,               # Parameter for additional labor-related processes (unused here)
     gamma_z=0.12,              # Parameter for additional shock process (unused here)
     gamma_q=0.1,               # Parameter for another process (unused here)
-    zeta_ua=0.09714970304225913,  # Utility discount or cost parameter for urban agricultural group
-    r_land=0.047434872244243725,    # Land return rate
+    zeta_ua=-0.11330187603883306,  # Utility discount or cost parameter for urban agricultural group
+    r_land=0.5249142987075832,    # Land return rate
     phi_a=0.5,                 # Parameter related to land risk for agricultural hukou
     delta_n=0.27,              # Additional land risk parameter
-    sigma_e=0.21509367659714868,  # Scale parameter for idiosyncratic shocks
-    zeta_ru=0.31666396394931695,    # Utility discount or cost parameter for rural urban group
-    zeta_rr=-0.3479186418550472,   # Utility discount or cost parameter for rural rural group
+    sigma_e=0.19336480726308442,  # Scale parameter for idiosyncratic shocks
+    zeta_ru=0.25515986986304473,    # Utility discount or cost parameter for rural urban group
+    zeta_rr=-0.2825947270401527,   # Utility discount or cost parameter for rural rural group
     income_thres_top10_base=0.0,   # Base threshold for income top 10%
     sig=1.0                    # Std deviation of shock noise for Tauchen method (0.4 baseline)
 )
@@ -592,7 +569,7 @@ function calibration(params_in)
         0.248,
         0.139, # 0.144/(1.0-0.584)# 0.139
         0.734,
-        0.067
+        0.43
     ]
 
     # Set parameters and get steady state results
@@ -624,7 +601,7 @@ function calibration(params_in)
         dist[ii] = abs(model[ii] - data[ii]) + 100000 * abs(params_in[ii] - params[ii])
     end
     dist = dist ./ data
-    max_dist = sum(dist .^ 2) / NMOM
+    max_dist = sqrt(sum(dist .^ 2)) / NMOM
 
     println("parameters")
     display(params)
@@ -720,12 +697,19 @@ end
 ######################################################
 
 # Initial guess for the parameters
-initial_guess = [0.49777869220275955,
- -0.3479186418550472,
-  0.09714970304225913,
-  0.31666396394931695,
-  0.21509367659714868,
-  0.047434872244243725
+# initial_guess = [0.49777869220275955,
+#  -0.3479186418550472,
+#   0.09714970304225913,
+#   0.31666396394931695,
+#   0.21509367659714868,
+#   0.047434872244243725
+# ]
+initial_guess = [0.5159784284016175,
+ -0.2825947270401527,
+ -0.11330187603883306,
+  0.25515986986304473,
+  0.19336480726308442,
+  0.5249142987075832
 ]
 
 
