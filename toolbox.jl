@@ -246,3 +246,7 @@ function sample_states_from_distribution(distribution_matrix::AbstractArray, NN:
 
     return initial_states
 end
+
+    function sample_with_weights(array, weights)
+        return sample(array, Weights(weights))
+    end

@@ -432,13 +432,14 @@ function monte_carlo_simulation(p::Params, dec::Dec, meas::Meas, prices::Prices,
     @unpack a, ell = prices
 
     ii_sim = zeros(Int, NN)
+    iip_sim = zeros(Int, NN)
     iz_sim = zeros(Int, NN)
     ia_sim = zeros(Int, NN)
     ih_sim = zeros(Int, NN)
 
     # Initialize storage for household trajectories
     initial_states = sample_states_from_distribution(meas.m, NN)
-    a_sim, h_sim, z_sim, wage_sim, earnings_sim, lhp_sim = zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN)
+    a_sim, h_sim, z_sim, wage_sim, earnings_sim, earningsp_sim, hp_sim, lhp_sim = zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN)
 
     Threads.@threads for i in 1:NN
 
@@ -452,10 +453,15 @@ function monte_carlo_simulation(p::Params, dec::Dec, meas::Meas, prices::Prices,
         if icase_sim == 1 && (ii_sim[i] == 3 || ii_sim[i] == 4)
             lhp_sim[i] = log_hplus(lz[iz_sim[i]], lq[1], lh[ih_sim[i]], 0.0, p)
         end
+        hp_sim[i] = exp(lhp_sim[i])
+
+        iip_sim[i] = sample_with_weights(1:p.NI, dec.pplus[ii_sim[i], ih_sim[i], ia_sim[i], iz_sim[i], :])
+        earningsp_sim[i] = prices.wage[iip_sim[i]] * hp_sim[i]
+        
     end
 
     # Return all simulated data as a NamedTuple
-    return (a_sim=a_sim, h_sim=h_sim, wage_sim=wage_sim, earnings_sim=earnings_sim, ii_sim=ii_sim, lhp_sim=lhp_sim)
+    return (a_sim=a_sim, h_sim=h_sim, wage_sim=wage_sim, earnings_sim=earnings_sim, earningsp_sim=earningsp_sim, ii_sim=ii_sim, lhp_sim=lhp_sim)
 end
 
 
@@ -542,6 +548,14 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
     avg_earnings_rural = mean(sim.earnings_sim[(sim.ii_sim.==1)])
     avg_earnings_urban = mean(sim.earnings_sim[(sim.ii_sim.==2).|(sim.ii_sim.==3).|(sim.ii_sim.==4)])
 
+    gini_earnings = gini_coefficient(sim.earnings_sim)
+
+    reg_cons = ones(length(sim.earnings_sim))
+    reg_X = hcat(reg_cons, log.(sim.earnings_sim))
+    reg_Y = log.(sim.earningsp_sim)
+    reg_beta = (reg_X' * reg_X) \ (reg_X' * reg_Y)
+    IGE = reg_beta[2]
+
     println("MOMENTS")
     println("")
     println("shares of rr, ru, ua, un")
@@ -566,7 +580,8 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
 
     return (kfun0=dec.aplus, pplus=dec.pplus, gridk0=gridk0, KK=agg.meank, share_top25_in_34=share_top25_in_34, land_income_share_state1=land_income_share_state1,
         LL=agg.meanL, r_share=r_share, ua_share=ua_share, ru_share=ru_share, share34=share34, rr_share=rr_share, income_thres_top10=income_thres_top10,
-        share_top10_in_34=share_top10_in_34, share_top10_in_34_cf=share_top10_in_34_cf, welfare=welfare, welfare_add=welfare_add, avg_income=agg.avg_income)
+        share_top10_in_34=share_top10_in_34, share_top10_in_34_cf=share_top10_in_34_cf, welfare=welfare, welfare_add=welfare_add, avg_income=agg.avg_income,
+        gini_earnings=gini_earnings, meanL=agg.meanL, IGE=IGE)
 
 end
 
@@ -801,7 +816,7 @@ p = setParameters()
 Ncase = 3
 
 # Initialize welfare change container
-changes = zeros(Ncase, 2)
+changes = zeros(Ncase, 5)
 
 for icase = 1:Ncase
     local ii = icase
@@ -809,9 +824,15 @@ for icase = 1:Ncase
         if icase == 1
             changes[ii, 1] = ((output[icase].welfare - (output[1].welfare - output[1].welfare_add))/output[1].welfare_add)^(1.0/(1.0-p.mu)) - 1.0
             changes[ii, 2] = 0.0
+            changes[ii, 3] = output[icase].gini_earnings
+            changes[ii, 4] = output[icase].IGE
+            changes[ii, 5] = 0.0
         else
             changes[ii, 1] = ((output[icase].welfare - (output[1].welfare - output[1].welfare_add))/output[1].welfare_add)^(1.0/(1.0-p.mu)) - 1.0
             changes[ii, 2] = output[icase].avg_income / output[1].avg_income - 1.0
+            changes[ii, 3] = output[icase].gini_earnings/output[1].gini_earnings - 1.0
+            changes[ii, 4] = output[icase].IGE/output[1].IGE - 1.0
+            changes[ii, 5] = output[icase].meanL/output[1].meanL - 1.0
         end
         changes[ii, :] = changes[ii, :] * 100.0
         ii += 1
@@ -819,7 +840,7 @@ for icase = 1:Ncase
 end
 
 # Labels and column names
-row_labels = ["Welfare (CEV %)", "GDP (%)"]
+row_labels = ["Welfare (CEV %)", "GDP (%)", "gini earnings (%)", "IGE (%)", "Human capital (%)"]
 col_labels = ["Benchmark", "φₐ = 0", "φₐ = 0 PE"]
 
 # Transpose and round the matrix for DataFrame creation
