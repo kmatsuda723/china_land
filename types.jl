@@ -45,6 +45,8 @@ struct Dec
     aplus::Array{Float64, 4}
     iaplus::Array{Int, 4}
     pplus::Array{Float64, 5}
+    v::Array{Float64, 4}
+    v_add::Array{Float64, 4}
 end
 
 struct Meas

@@ -166,6 +166,7 @@ function solve_household(p::Params, prices::Prices)
     pplus = zeros(p.NI, p.NH, p.NA, p.NZ, p.NI)      # Probability distribution over category choices
 
     v = zeros(p.NI, p.NH, p.NA, p.NZ)                # Value function from previous iteration
+    v_add = zeros(p.NI, p.NH, p.NA, p.NZ)            # The additive utility part of Value function from previous iteration
     tv = similar(iaplus)                            # Updated value function
 
     err = 20.0
@@ -179,15 +180,19 @@ function solve_household(p::Params, prices::Prices)
     while (err > 0.01) & (iter < maxiter)
         @inbounds for ii in 1:p.NI
             vtemp = fill(-1e6, p.NA2, p.NI)
+            v_addtemp = fill(-1e6, p.NA2, p.NI)
             ptemp = fill(-1e6, p.NA2, p.NI)
             vtemp2 = fill(-1e6, p.NA2)
+            v_addtemp2 = fill(-1e6, p.NA2)
 
             for ia in 1:p.NA        # state: asset
                 for ih in 1:p.NH    # state: human capital
                     for iz in 1:p.NZ # state: productivity
                         fill!(vtemp, -1e6)
+                        fill!(v_addtemp, -1e6)
                         fill!(ptemp, -1e6)
                         fill!(vtemp2, -1e6)
+                        fill!(v_addtemp2, -1e6)
 
                         for iap in 1:p.NA2       # control: next period's asset
                             for iip in 1:p.NI    # control: category choice
@@ -210,15 +215,21 @@ function solve_household(p::Params, prices::Prices)
                                 ihl, ihr, varphi_h = interp_lh_cache[ii, ih, iz]
 
                                 vpr = 0.0
+                                vpr_add = 0.0
                                 for izp in 1:p.NZ
                                     pz = p.prob[iz, izp]
                                     vpr += pz * (
                                         varphi_h * (varphi * v[iip, ihl, ial, izp] + (1.0 - varphi) * v[iip, ihl, iar, izp]) +
                                         (1.0 - varphi_h) * (varphi * v[iip, ihr, ial, izp] + (1.0 - varphi) * v[iip, ihr, iar, izp])
                                     )
+                                    vpr_add += pz * (
+                                        varphi_h * (varphi * v_add[iip, ihl, ial, izp] + (1.0 - varphi) * v_add[iip, ihl, iar, izp]) +
+                                        (1.0 - varphi_h) * (varphi * v_add[iip, ihr, ial, izp] + (1.0 - varphi) * v_add[iip, ihr, iar, izp])
+                                    )
                                 end
 
                                 vtemp[iap, iip] = util + p.beta * vpr
+                                v_addtemp[iap, iip] = (max(cons, 1e-4)^(1.0 - p.mu)) / (1.0 - p.mu) + p.beta * vpr_add
                             end
 
                             maxv = maximum(vtemp[iap, :])
@@ -228,6 +239,7 @@ function solve_household(p::Params, prices::Prices)
                                 ptemp[iap, iip] = 1.0 / denom
                             end
                             vtemp2[iap] = maxv + p.sigma_e * log(sum_exp)
+                            v_addtemp2[iap] = sum(ptemp[iap, :].*v_addtemp[iap, :])
                         end
 
                         # Bellman maximization step
@@ -236,6 +248,7 @@ function solve_household(p::Params, prices::Prices)
                         iaplus[ii, ih, ia, iz] = max_index
                         aplus[ii, ih, ia, iz] = prices.gridk2[max_index]
                         pplus[ii, ih, ia, iz, :] = ptemp[max_index, :]
+                        v_add[ii, ih, ia, iz] = v_addtemp2[max_index]
                     end
                 end
             end
@@ -250,7 +263,7 @@ function solve_household(p::Params, prices::Prices)
         println("WARNING!! @solve_household: iteration reached max: iter=$iter, err=$err")
     end
 
-    return Dec(aplus, iaplus, pplus)
+    return Dec(aplus, iaplus, pplus, v, v_add)
 end
 
 function get_distribution(p::Params, dec::Dec, prices::Prices)::Meas
@@ -369,7 +382,7 @@ function get_Steadystate(p::Params, icase::Int; guess_base::Union{Guess_base,Not
 
     # Preallocate
     prices = Prices(0.0, zeros(p.NI), 0.0, zeros(p.NA), zeros(p.NA2), 0.0, 0.0, zeros(p.NI), 0.0, 0.0, 0.0)
-    dec = Dec(zeros(p.NI, p.NH, p.NA, p.NZ), zeros(p.NI, p.NH, p.NA, p.NZ), zeros(p.NI, p.NH, p.NA, p.NZ, p.NI))
+    dec = Dec(zeros(p.NI, p.NH, p.NA, p.NZ), zeros(p.NI, p.NH, p.NA, p.NZ), zeros(p.NI, p.NH, p.NA, p.NZ, p.NI), zeros(p.NI, p.NH, p.NA, p.NZ), zeros(p.NI, p.NH, p.NA, p.NZ))
     meas = Meas(zeros(p.NI, p.NH, p.NA, p.NZ))
     agg = Agg(0.0, 0.0, 0.0, 0.0, zeros(p.NI), zeros(p.NZ), zeros(p.NA), zeros(p.NH))
 
@@ -500,6 +513,9 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
     ru_share = sum(meas.m[2, :, :, :]) / sum(meas.m[:, :, :, :])
     rr_share = sum(meas.m[1, :, :, :]) / sum(meas.m[:, :, :, :])
 
+    welfare = sum(meas.m .* dec.v)
+    welfare_add = sum(meas.m .* dec.v_add)
+
 
     college_thres = percentile(sim.lhp_sim, 90)
     # error(college_thresl)
@@ -550,7 +566,7 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
 
     return (kfun0=dec.aplus, pplus=dec.pplus, gridk0=gridk0, KK=agg.meank, share_top25_in_34=share_top25_in_34, land_income_share_state1=land_income_share_state1,
         LL=agg.meanL, r_share=r_share, ua_share=ua_share, ru_share=ru_share, share34=share34, rr_share=rr_share, income_thres_top10=income_thres_top10,
-        share_top10_in_34=share_top10_in_34, share_top10_in_34_cf=share_top10_in_34_cf)
+        share_top10_in_34=share_top10_in_34, share_top10_in_34_cf=share_top10_in_34_cf, welfare=welfare, welfare_add=welfare_add, avg_income=agg.avg_income)
 
 end
 
@@ -775,7 +791,47 @@ function main()
     return output, income_thres_top10_base
 end
 
+# Run main simulation to get outputs
 output, income_thres_top10_base = main()
+
+# Set model parameters
+p = setParameters()
+
+# Number of cases
+Ncase = 3
+
+# Initialize welfare change container
+changes = zeros(Ncase, 2)
+
+for icase = 1:Ncase
+    local ii = icase
+    if icase == 1 || icase == 2 || icase == 3
+        if icase == 1
+            changes[ii, 1] = ((output[icase].welfare - (output[1].welfare - output[1].welfare_add))/output[1].welfare_add)^(1.0/(1.0-p.mu)) - 1.0
+            changes[ii, 2] = 0.0
+        else
+            changes[ii, 1] = ((output[icase].welfare - (output[1].welfare - output[1].welfare_add))/output[1].welfare_add)^(1.0/(1.0-p.mu)) - 1.0
+            changes[ii, 2] = output[icase].avg_income / output[1].avg_income - 1.0
+        end
+        changes[ii, :] = changes[ii, :] * 100.0
+        ii += 1
+    end
+end
+
+# Labels and column names
+row_labels = ["Welfare (CEV %)", "GDP (%)"]
+col_labels = ["Benchmark", "φₐ = 0", "φₐ = 0 PE"]
+
+# Transpose and round the matrix for DataFrame creation
+rounded_changes = round.(changes', digits=4)
+
+# Create DataFrame with labeled rows and columns
+df = DataFrame(rounded_changes, col_labels)
+insertcols!(df, 1, :variables => row_labels)
+
+# Export to CSV
+CSV.write("figures/outcome.csv", df)
+
 
 
 # plot
