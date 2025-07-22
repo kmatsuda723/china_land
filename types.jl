@@ -32,7 +32,6 @@ struct Prices
     wage::Vector{Float64}
     phi::Float64
     a::Vector{Float64}
-    gridk2::Vector{Float64}
     ell::Float64
     avg_income::Float64
     tuition::Vector{Float64}
@@ -43,7 +42,7 @@ end
 
 struct Dec
     aplus::Array{Float64, 4}
-    iaplus::Array{Int, 4}
+    e::Array{Float64, 4}
     pplus::Array{Float64, 5}
     v::Array{Float64, 4}
     v_add::Array{Float64, 4}
