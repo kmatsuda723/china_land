@@ -112,7 +112,7 @@ function setParameters(;
 end
 
 function log_hplus(logz, logq, logh, logxi, p::Params)
-    return p.gamma_z * logz + 0.0*p.gamma_q * logq + p.gamma_h * logh + logxi
+    return p.gamma_z * logz + p.gamma_q * logq + p.gamma_h * logh + logxi
 end
 
 function set_prices(p::Params, KL, land_lost, avg_income)::Prices
@@ -168,7 +168,7 @@ function solve_household(p::Params, prices::Prices)
     maxiter = 2000
     iter = 1
 
-    NA2 = 20
+    NA2 = 30
     # Asset grid for optimal choice (control variable)
     gridk2 = zeros(NA2)
     gridk2[1] = 0.01
@@ -180,50 +180,48 @@ function solve_household(p::Params, prices::Prices)
     gride = zeros(NA2)
     gride[1] = 0.01
     for ia in 2:NA2
-        gride[ia] = gride[1] + (0.99 - 0.01) * ((ia - 1) / (NA2 - 1))
+        gride[ia] = gride[1] + (0.5 - 0.01) * ((ia - 1) / (NA2 - 1))
     end
 
-    # # Cache human capital interpolation
-    lhplus_cache = [log_hplus(p.lz[iz], p.lq[ii], p.lh[ih], 0.0, p) for ii in 1:p.NI, ih in 1:p.NH, iz in 1:p.NZ]
-    interp_lh_cache = [(interp(lhplus_cache[ii, ih, iz], p.lh)) for ii in 1:p.NI, ih in 1:p.NH, iz in 1:p.NZ]
+    # # # Cache human capital interpolation
+    # lhplus_cache = [log_hplus(p.lz[iz], p.lq[ii], p.lh[ih], 0.0, p) for ii in 1:p.NI, ih in 1:p.NH, iz in 1:p.NZ]
+    # interp_lh_cache = [(interp(lhplus_cache[ii, ih, iz], p.lh)) for ii in 1:p.NI, ih in 1:p.NH, iz in 1:p.NZ]
 
     while (err > 0.01) & (iter < maxiter)
-        @inbounds for ii in 1:p.NI
-            vtemp = fill(-1e6, NA2, NA2, p.NI)
-            v_addtemp = fill(-1e6, NA2, NA2, p.NI)
-            ptemp = fill(-1e6, NA2, NA2, p.NI)
-            vtemp2 = fill(-1e6, NA2, NA2)
-            v_addtemp2 = fill(-1e6, NA2, NA2)
+            # vtemp = fill(-1e6, NA2, NA2, p.NI)
+            # v_addtemp = fill(-1e6, NA2, NA2, p.NI)
+            # ptemp = fill(-1e6, NA2, NA2, p.NI)
+            # vtemp2 = fill(-1e6, NA2, NA2)
+            # v_addtemp2 = fill(-1e6, NA2, NA2)
 
-            for ia in 1:p.NA        # state: asset
-                for ih in 1:p.NH    # state: human capital
-                    for iz in 1:p.NZ # state: productivity
-                        fill!(vtemp, -1e6)
-                        fill!(v_addtemp, -1e6)
-                        fill!(ptemp, -1e6)
-                        fill!(vtemp2, -1e6)
-                        fill!(v_addtemp2, -1e6)
+            Threads.@threads for ia in 1:p.NA        # state: asset
+                        @inbounds for ii in 1:p.NI
+
+                @inbounds for ih in 1:p.NH    # state: human capital
+                    @inbounds for iz in 1:p.NZ # state: productivity
+                        # fill!(vtemp, -1e6)
+                        # fill!(v_addtemp, -1e6)
+                        # fill!(ptemp, -1e6)
+                        # fill!(vtemp2, -1e6)
+                        # fill!(v_addtemp2, -1e6)
+                        local vtemp, v_addtemp, ptemp, vtemp2, v_addtemp2
+                        vtemp = fill(-1e6, NA2, NA2, p.NI)
+                        v_addtemp = fill(-1e6, NA2, NA2, p.NI)
+                        ptemp = fill(-1e6, NA2, NA2, p.NI)
+                        vtemp2 = fill(-1e6, NA2, NA2)
+                        v_addtemp2 = fill(-1e6, NA2, NA2)
 
                         coh = prices.wage[ii] * p.h[ih] +
-                              (1.0 + prices.r) * prices.a[ia] - prices.tuition[ii] + p.r_land * prices.ell * (1.0 - p.land_risk[ii])
+                              (1.0 + prices.r) * prices.a[ia] + p.r_land * prices.ell * (1.0 - p.land_risk[ii])
 
-                        for iap in 1:NA2       # control: next period's asset
-                            for ie in 1:1
-                                for iip in 1:p.NI    # control: category choice
+                        @inbounds for iap in 1:NA2       # control: next period's asset
+                            @inbounds for ie in 1:NA2
+                                @inbounds for iip in 1:p.NI    # control: category choice
 
                                     # # Compute consumption
-                                    # error(coh)
-
                                     a_plus = gridk2[ia]
-                                    educ = 1e-4 # max(gride[ie] * (1.0 - gridk2[ia]) * coh, 1e-4)
-
+                                    educ = max(gride[ie], 1e-4) # max(gride[ie] * (1.0 - gridk2[ia]) * coh, 1e-4)
                                     cons = coh - a_plus - educ
-
-
-                                                                    # Compute consumption
-                                cons = prices.wage[ii] * p.h[ih] +
-                                       (1.0 + prices.r) * prices.a[ia] -
-                                       a_plus - prices.tuition[ii]+ p.r_land * prices.ell * (1.0 - p.land_risk[ii])
 
                                     if cons <= 0.0
                                         break  # Negative consumption → infeasible
@@ -236,11 +234,11 @@ function solve_household(p::Params, prices::Prices)
                                     ial, iar, varphi = interp(a_plus, prices.a)
                                     # ial, iar, varphi = interp(a_plus, prices.a)
 
-                                    # ihl, ihr, varphi_h = interp(log_hplus(p.lz[iz], log(educ), p.lh[ih], 0.0, p), p.lh)
+                                    ihl, ihr, varphi_h = interp(log_hplus(p.lz[iz], log(educ), p.lh[ih], 0.0, p), p.lh)
                                     # ihl, ihr, varphi_h = interp(log_hplus(p.lz[iz], p.lq[ii], p.lh[ih], 0.0, p), p.lh)
 
 
-                                    ihl, ihr, varphi_h = interp_lh_cache[ii, ih, iz]
+                                    # ihl, ihr, varphi_h = interp_lh_cache[ii, ih, iz]
 
                                     vpr = 0.0
                                     vpr_add = 0.0
@@ -266,7 +264,7 @@ function solve_household(p::Params, prices::Prices)
                                     denom = sum(exp.((vtemp[iap, ie, :] .- vtemp[iap, ie, iip]) ./ p.sigma_e))
                                     ptemp[iap, ie, iip] = 1.0 / denom
                                 end
-                                vtemp2[iap, ie] = maxv  + p.sigma_e * log(sum_exp)
+                                vtemp2[iap, ie] = maxv + p.sigma_e * log(sum_exp)
                                 v_addtemp2[iap, ie] = sum(ptemp[iap, ie, :] .* v_addtemp[iap, ie, :])
                             end
                         end
@@ -278,7 +276,7 @@ function solve_household(p::Params, prices::Prices)
                         tv[ii, ih, ia, iz] = vtemp2[iap_opt, ie_opt]
                         iaplus[ii, ih, ia, iz] = iap_opt
                         aplus[ii, ih, ia, iz] = gridk2[iap_opt] # gridk2[iap_opt] * coh
-                        e[ii, ih, ia, iz] = gride[ie_opt] * (1.0 - gridk2[iap_opt]) * coh
+                        e[ii, ih, ia, iz] = gride[ie_opt] # * (1.0 - gridk2[iap_opt]) * coh
                         pplus[ii, ih, ia, iz, :] = ptemp[iap_opt, ie_opt, :]
                         v_add[ii, ih, ia, iz] = v_addtemp2[iap_opt, ie_opt]
                     end
@@ -293,8 +291,8 @@ function solve_household(p::Params, prices::Prices)
         iter += 1
     end
 
-        #     display(v[1, :, :, :])
-        # error("check")
+    #     display(e[1, :, :, :])
+    # error("check")
     if iter == maxiter
         println("WARNING!! @solve_household: iteration reached max: iter=$iter, err=$err")
     end
@@ -318,8 +316,8 @@ function get_distribution(p::Params, dec::Dec, prices::Prices)::Meas
                 for ih in 1:p.NH
                     for iz in 1:p.NZ
 
-                        # lhplus = log_hplus(p.lz[iz], log(dec.e[ii, ih, ia, iz]), p.lh[ih], 0.0, p)
-                        lhplus = log_hplus(p.lz[iz], p.lq[ii], p.lh[ih], 0.0, p)
+                        lhplus = log_hplus(p.lz[iz], log(dec.e[ii, ih, ia, iz]), p.lh[ih], 0.0, p)
+                        # lhplus = log_hplus(p.lz[iz], p.lq[ii], p.lh[ih], 0.0, p)
 
                         ihl, ihr, varphi_h = interp(lhplus, p.lh)
 
