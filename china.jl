@@ -439,7 +439,7 @@ function monte_carlo_simulation(p::Params, dec::Dec, meas::Meas, prices::Prices,
 
     # Initialize storage for household trajectories
     initial_states = sample_states_from_distribution(meas.m, NN)
-    a_sim, h_sim, z_sim, wage_sim, earnings_sim, earningsp_sim, hp_sim, lhp_sim = zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN)
+    a_sim, h_sim, z_sim, wage_sim, wagep_sim, earnings_sim, earningsp_sim, hp_sim, lhp_sim = zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN)
 
     Threads.@threads for i in 1:NN
 
@@ -456,12 +456,13 @@ function monte_carlo_simulation(p::Params, dec::Dec, meas::Meas, prices::Prices,
         hp_sim[i] = exp(lhp_sim[i])
 
         iip_sim[i] = sample_with_weights(1:p.NI, dec.pplus[ii_sim[i], ih_sim[i], ia_sim[i], iz_sim[i], :])
+        wagep_sim[i] = prices.wage[iip_sim[i]]
         earningsp_sim[i] = prices.wage[iip_sim[i]] * hp_sim[i]
         
     end
 
     # Return all simulated data as a NamedTuple
-    return (a_sim=a_sim, h_sim=h_sim, wage_sim=wage_sim, earnings_sim=earnings_sim, earningsp_sim=earningsp_sim, ii_sim=ii_sim, lhp_sim=lhp_sim)
+    return (a_sim=a_sim, h_sim=h_sim, wage_sim=wage_sim, wagep_sim=wagep_sim, earnings_sim=earnings_sim, earningsp_sim=earningsp_sim, ii_sim=ii_sim, iip_sim=iip_sim, lhp_sim=lhp_sim, hp_sim=hp_sim)
 end
 
 
@@ -551,10 +552,21 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
     gini_earnings = gini_coefficient(sim.earnings_sim)
 
     reg_cons = ones(length(sim.earnings_sim))
+
     reg_X = hcat(reg_cons, log.(sim.earnings_sim))
     reg_Y = log.(sim.earningsp_sim)
     reg_beta = (reg_X' * reg_X) \ (reg_X' * reg_Y)
     IGE = reg_beta[2]
+
+    reg_X = hcat(reg_cons, log.(sim.h_sim))
+    reg_Y = log.(sim.hp_sim)
+    reg_beta = (reg_X' * reg_X) \ (reg_X' * reg_Y)
+    IGE2 = reg_beta[2]
+
+    reg_X = hcat(reg_cons, log.(sim.wage_sim))
+    reg_Y = log.(sim.wagep_sim)
+    reg_beta = (reg_X' * reg_X) \ (reg_X' * reg_Y)
+    IGE3 = reg_beta[2]
 
     println("MOMENTS")
     println("")
@@ -569,6 +581,12 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
     println("")
     println("rural/urban avg income")
     display(round(avg_earnings_rural / avg_earnings_urban; digits=4))
+    println("")
+    println("IGE of ability")
+    display(round(IGE2; digits=4))
+        println("")
+    println("IGE of location")
+    display(round(IGE3; digits=4))
 
     if icase == 1
         println("")
