@@ -1,7 +1,12 @@
-moments,p,model moments,data moments
-K/Y,0.516,3.5841,3.53
-rural rural share,-0.2826,0.4362,0.445
-urban ag share,-0.1133,0.271,0.248
-rural urban share,0.2552,0.1355,0.139
-top 25% in urban,0.1934,0.7301,0.734
-land income share in rural,0.5249,0.42,0.43
+moments,model moments,data moments
+K/Y,2.8871,3.53
+rural rural share,0.3084,0.445
+urban ag share,0.254,0.248
+rural urban share,0.1904,0.139
+top 25% in urban,0.9162,0.734
+land income share in rural,0.4855,0.43
+wage ua/r,1.9428,1.543
+wage un/r,2.0842,2.0445
+lq r,0.2631,0.72
+lq ra,0.4436,0.88
+lq rn,0.4693,1.0

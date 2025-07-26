@@ -25,6 +25,10 @@ struct Params
     sigma_e::Float64
     dutil::Vector{Float64}
     zeta_rr::Float64
+    z_educ::Float64
+    w_un_r::Float64
+    w_ua_r::Float64
+    zeta::Float64
 end
 
 struct Prices
@@ -38,6 +42,8 @@ struct Prices
     a_u::Float64
     KL::Float64
     land_lost::Float64
+    avg_z_r::Float64
+    avg_z_u::Float64
 end
 
 struct Dec
@@ -61,6 +67,8 @@ struct Agg
     mass_z::Vector{Float64}
     mass_a::Vector{Float64}
     mass_h::Vector{Float64}
+    avg_z_r::Float64
+    avg_z_u::Float64
 end
 
 struct Guess_base
