@@ -1,6 +1,6 @@
-variables,Benchmark,φₐ = 0,φₐ = 0 PE
-Welfare (CEV %),0.0,1.7052,10.7871
-GDP (%),0.0,3.2381,2.5779
-gini earnings (%),11.5381,-5.6913,-3.5995
-IGE (%),23.4713,14.7789,13.0301
-Human capital (%),0.0,0.2158,-0.0112
+variables,Benchmark,φₐ = 0
+Welfare (CEV %),0.0,3.0084
+GDP (%),0.0,5.0342
+gini earnings (%),23.0407,-4.0214
+IGE (%),1.3398,-321.6332
+Human capital (%),0.0,0.8771
