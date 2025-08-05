@@ -121,32 +121,32 @@ end
 #     if abs(sum(probabilities) - 1.0) > 1e-8
 #         error("Probabilities must sum to 1.")
 #     end
-    
+
 #     # Sort values and probabilities based on values
 #     sorted_indices = sortperm(values)
 #     sorted_values = values[sorted_indices]
 #     sorted_probabilities = probabilities[sorted_indices]
-    
+
 #     # Compute Gini index
 #     cumulative_values = cumsum(sorted_values .* sorted_probabilities)
 #     weighted_sum = sum(cumulative_values .* sorted_probabilities)
 #     mean_value = sum(sorted_values .* sorted_probabilities)
-    
+
 #     return 1.0 - 2.0 * weighted_sum / mean_value
 # end
 
 function rank_vector(X::Vector{Float64})
     # Sort X and get the original indices
     sorted_indices = sortperm(X)
-    
+
     # Initialize a vector for ranks
     ranks = similar(X, Int)
-    
+
     # Assign ranks based on the sorted indices
     for rank in 1:length(X)
         ranks[sorted_indices[rank]] = rank
     end
-    
+
     return ranks
 end
 
@@ -167,8 +167,8 @@ function interp(x, grid)
     ial = searchsortedlast(grid, x)  # Index of the grid just above or equal to x
     ial = max(1, ial)  # Ensure index is within bounds
 
-    if ial>length(grid)-1
-        ial = length(grid)-1  # Handle case where x is beyond the grid
+    if ial > length(grid) - 1
+        ial = length(grid) - 1  # Handle case where x is beyond the grid
     end
 
     iar = ial + 1  # The index just below ial
@@ -211,7 +211,7 @@ end
 
 function normal_discrete(mu, sigma, N)
     prob_dist = zeros(N)
-    grid = collect(range(mu-2*sigma, stop=mu+2*sigma, length=N))
+    grid = collect(range(mu - 2 * sigma, stop=mu + 2 * sigma, length=N))
     step = grid[2] - grid[1]
     for i in 1:N
         if i == 1
@@ -220,7 +220,7 @@ function normal_discrete(mu, sigma, N)
             prob_dist[i] = 1 - cdf(Normal(mu, sigma), grid[i] - step / 2)
         else
             prob_dist[i] = cdf(Normal(mu, sigma), grid[i] + step / 2) -
-                               cdf(Normal(mu, sigma), grid[i] - step / 2)
+                           cdf(Normal(mu, sigma), grid[i] - step / 2)
         end
     end
     return grid, prob_dist
@@ -247,6 +247,6 @@ function sample_states_from_distribution(distribution_matrix::AbstractArray, NN:
     return initial_states
 end
 
-    function sample_with_weights(array, weights)
-        return sample(array, Weights(weights))
-    end
+function sample_with_weights(array, weights)
+    return sample(array, Weights(weights))
+end
