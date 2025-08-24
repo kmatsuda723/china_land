@@ -226,7 +226,7 @@ function normal_discrete(mu, sigma, N)
     return grid, prob_dist
 end
 
-function sample_states_from_distribution(distribution_matrix::AbstractArray, NN::Int)
+function sample_states_from_distribution(rng::AbstractRNG, distribution_matrix::AbstractArray, NN::Int)
     # Flatten the distribution to 1D
     distribution_flat = vec(distribution_matrix)
 
@@ -239,7 +239,7 @@ function sample_states_from_distribution(distribution_matrix::AbstractArray, NN:
     possible_states = CartesianIndices(size(distribution_matrix))
 
     # Sample indices according to the distribution
-    sampled_indices = rand(Categorical(distribution_flat), NN)
+    sampled_indices = rand(rng, Categorical(distribution_flat), NN)
 
     # Map sampled flat indices to multi-dimensional indices (tuples)
     initial_states = Tuple.(possible_states[sampled_indices])
@@ -247,6 +247,6 @@ function sample_states_from_distribution(distribution_matrix::AbstractArray, NN:
     return initial_states
 end
 
-function sample_with_weights(array, weights)
-    return sample(array, Weights(weights))
+function sample_with_weights(rng::AbstractRNG, array, weights)
+    return sample(rng, array, Weights(weights))
 end
