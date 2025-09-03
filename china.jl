@@ -39,7 +39,7 @@ function setParameters(;
     rho=0.6,                   # AR(1) coefficient for labor productivity process
     gamma_h=0.0,               # Parameter for additional labor-related processes (unused here)
     gamma_z=0.09,              # Parameter for additional shock process (unused here)
-    gamma_q=0.3,               # Parameter for another process (unused here)
+    gamma_q=0.59,               # Parameter for another process (unused here)
     zeta_ua=-0.11330187603883306,  # Utility discount or cost parameter for urban agricultural group
     r_land=0.5249142987075832,    # Land return rate
     phi_a=0.5,                 # Parameter related to land risk for agricultural hukou
@@ -72,7 +72,7 @@ function setParameters(;
     z = exp.(lz)  # Convert from logs to levels
 
     # Discretized human capital (labor supply) grid
-    lh = collect(range(-0.5, stop=0.5, length=NH))
+    lh = collect(range(-3.5, stop=-1.5, length=NH))
     h = exp.(lh)  # Levels
 
     # ========================================================= #
@@ -141,7 +141,7 @@ function set_prices(p::Params, KL, land_lost, avg_income, avg_z_r, avg_z_u)
     phi = p.b
 
     # Asset grid for state variables
-    a_u = 1.0
+    a_u = 0.3
     a_l = -phi
     curvK = 1.1
 
@@ -161,10 +161,10 @@ function set_prices(p::Params, KL, land_lost, avg_income, avg_z_r, avg_z_u)
     # tuition[2] = 13471.0 / 30333.0 / 30 * avg_income
     # tuition[3] = 24151.0 / 30333.0 / 30 * avg_income
     # tuition[4] = 54728.0 / 30333.0 / 30 * avg_income
-    tuition[1] = 58275.0 / 30333.0 / 30 * avg_income
-    tuition[2] = 58275.0 / 30333.0 / 30 * avg_income
-    tuition[3] = 85116.0 / 30333.0 / 30 * avg_income
-    tuition[4] = 121346.0 / 30333.0 / 30 * avg_income
+    tuition[1] = 52016.0 / 30333.0 / 30 * avg_income
+    tuition[2] = 52016.0 / 30333.0 / 30 * avg_income
+    tuition[3] = 83223.0 / 30333.0 / 30 * avg_income
+    tuition[4] = 119645.0 / 30333.0 / 30 * avg_income
 
     return Prices(r, wage, phi, a, ell, avg_income, tuition, a_u, KL, land_lost, avg_z_r, avg_z_u)
 end
@@ -200,7 +200,13 @@ function solve_household(p::Params, prices::Prices)
 
     while (err > 0.05) & (iter < maxiter)
         # Use ThreadsX.foreach for parallelization over asset/human capital indices
+
+        #         Threads.@threads for idx in CartesianIndices((p.NA, p.NH))
+        # # For each state (human capital, ability, asset)
+        # ia, ih = Tuple(idx)
+
         ThreadsX.foreach(1:(p.NA*p.NH)) do idx
+
             ia = div(idx - 1, p.NH) + 1  # asset index
             ih = mod(idx - 1, p.NH) + 1  # human capital index
             @inbounds for ii in 1:p.NI, iz in 1:p.NZ
@@ -216,7 +222,7 @@ function solve_household(p::Params, prices::Prices)
                 if ii in (1, 2)
                     ie_max = 1
                 else
-                    ie_max = NG
+                    ie_max = 1
                 end
                 @inbounds @views for iap in 1:NG, ie in 1:ie_max
                     @inbounds for iip in 1:p.NI
@@ -280,7 +286,6 @@ function solve_household(p::Params, prices::Prices)
     end
 
     # display(e)
-    # display(aplus)
     # error("check")
     if iter == maxiter
         println("WARNING!! @solve_household: iteration reached max: iter=$iter, err=$err")
@@ -310,9 +315,15 @@ function get_distribution(p::Params, dec::Dec, prices::Prices)::Meas
                             lhplus = log_hplus(p.lz[iz], dec.e[ii, ih, ia, iz] + prices.tuition[ii], p.lh[ih], 0.0, prices.avg_z_u, p)
                         end
 
+
+
                         # lhplus = log_hplus(p.lz[iz], p.lq[ii], p.lh[ih], 0.0, p)
 
                         ihl, ihr, varphi_h = interp(lhplus, p.lh)
+
+                        # if ii==1
+                        # display(ihl)
+                        # end
 
                         # Interpolate a'
                         ial, iar, varphi = interp(dec.aplus[ii, ih, ia, iz], prices.a)
@@ -348,6 +359,7 @@ function get_distribution(p::Params, dec::Dec, prices::Prices)::Meas
         iter += 1
         fill!(m_new, 0.0)
     end
+    # error(vec(sum(m, dims=(1, 3, 4))))
 
     # display(minimum(m))
 
@@ -401,6 +413,9 @@ function aggregation(p::Params, dec::Dec, meas::Meas, prices::Prices)::Agg
     mass_a = vec(sum(m, dims=(1, 2, 4)))
     mass_h = vec(sum(m, dims=(1, 3, 4)))
 
+    # error(mass_h)
+
+
     return Agg(
         meank,
         meanL,
@@ -453,6 +468,8 @@ function get_Steadystate(p::Params, icase::Int; guess_base::Union{Guess_base,Not
         meas = get_distribution(p, dec, prices)
         agg = aggregation(p, dec, meas, prices)
 
+
+
         # Update values
         KL_new = agg.meank / agg.meanL
         land_lost_new = agg.land_lost
@@ -483,6 +500,13 @@ function get_Steadystate(p::Params, icase::Int; guess_base::Union{Guess_base,Not
 
 
     end
+
+    #     display("meanL")
+    # display(agg.meanL)
+    #         display(agg.mass_i)
+
+    #                                 error(agg.mass_h)
+
 
     if iter == maxiter
         println("WARNING: did not converge. err = $err")
@@ -525,18 +549,24 @@ function monte_carlo_simulation(rng::AbstractRNG, p::Params, dec::Dec, meas::Mea
 
 
         if icase_sim == 1 && (ii_sim[i] == 3 || ii_sim[i] == 4) # validation exercise
-                        ipeer_sim[i] = prices.avg_z_r
-            lhp_sim[i] = log_hplus(lz[iz_sim[i]], prices.tuition[1], lh[ih_sim[i]], 0.0, prices.avg_z_r, p)
-    else
-
-        if ii_sim[i] == 1 || ii_sim[i] == 2
             ipeer_sim[i] = prices.avg_z_r
-            lhp_sim[i] = log_hplus(lz[iz_sim[i]], e_sim[i] + prices.tuition[ii_sim[i]], lh[ih_sim[i]], 0.0, prices.avg_z_r, p)
-        else
+            lhp_sim[i] = log_hplus(lz[iz_sim[i]], prices.tuition[1], lh[ih_sim[i]], 0.0, prices.avg_z_r, p)
+        elseif icase_sim == 2 && (ii_sim[i] == 1 || ii_sim[i] == 2) # validation exercise
             ipeer_sim[i] = prices.avg_z_u
-            lhp_sim[i] = log_hplus(lz[iz_sim[i]], e_sim[i] + prices.tuition[ii_sim[i]], lh[ih_sim[i]], 0.0, prices.avg_z_u, p)
+            ua_share_help = 0.248
+            un_share_help = 1.0-0.445-0.248-0.139
+            exp_help = prices.tuition[3]*ua_share_help/(ua_share_help+un_share_help) + prices.tuition[4]*un_share_help/(ua_share_help+un_share_help)
+            lhp_sim[i] = log_hplus(lz[iz_sim[i]], exp_help, lh[ih_sim[i]], 0.0, prices.avg_z_u, p)
+        else
+
+            if ii_sim[i] == 1 || ii_sim[i] == 2
+                ipeer_sim[i] = prices.avg_z_r
+                lhp_sim[i] = log_hplus(lz[iz_sim[i]], e_sim[i] + prices.tuition[ii_sim[i]], lh[ih_sim[i]], 0.0, prices.avg_z_r, p)
+            else
+                ipeer_sim[i] = prices.avg_z_u
+                lhp_sim[i] = log_hplus(lz[iz_sim[i]], e_sim[i] + prices.tuition[ii_sim[i]], lh[ih_sim[i]], 0.0, prices.avg_z_u, p)
+            end
         end
-    end
 
         hp_sim[i] = exp(lhp_sim[i])
 
@@ -583,19 +613,30 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
     share34 = count34 / length(top25_idx)
 
     # Get indices where state is 3 or 4
-    idx_12 = findall(i -> sim.ii_sim[i] in (1, 2), sim.ii_sim)
-    idx_34 = findall(i -> sim.ii_sim[i] in (3, 4), sim.ii_sim)
+    idx_12 = findall(x -> x in (1, 2), sim.ii_sim)
+    idx_34 = findall(x -> x in (3, 4), sim.ii_sim)
 
     # Count the number in the top 25% among those with state 3 or 4
     count_top25_in_34 = count(i -> sim.earnings_sim[i] >= income_threshold, idx_34)
     share_top25_in_34 = count_top25_in_34 / length(idx_34)
 
-
+    # # Count the number in the top 25% among those with state 3 or 4
+    count_top10_in_12 = count(i -> sim.lhp_sim[i] >= income_thres_top10, idx_12)
+    share_top10_in_12 = count_top10_in_12 / length(idx_12)
     # # Count the number in the top 25% among those with state 3 or 4
     count_top10_in_34 = count(i -> sim.lhp_sim[i] >= income_thres_top10, idx_34)
     share_top10_in_34 = count_top10_in_34 / length(idx_34)
 
-    # error(sim.lhp_sim[idx_34])
+
+
+    # display(maximum(sim.lhp_sim[sim.ii_sim.==1]))
+    #  display(maximum(sim.lhp_sim[sim.ii_sim.==2]))
+    #   display(maximum(sim.lhp_sim[sim.ii_sim.==3]))
+    #    display(maximum(sim.lhp_sim[sim.ii_sim.==4]))
+
+
+
+    # error(share_top10_in_34)
 
     land_income_sim = r_land * ell ./ (sim.earnings_sim .+ r_land * ell)
 
@@ -685,6 +726,8 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
     display(round(ua_share; digits=4))
     display(round(un_share; digits=4))
     println("")
+    println("rural share of college")
+    display(round(share_top10_in_12; digits=4))
     println("urban share of college")
     display(round(share_top10_in_34; digits=4))
     println("")
@@ -701,15 +744,25 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
     display(round(avg_e_ua; digits=4))
     display(round(avg_e_un; digits=4))
 
-    println("quality of edc, r, ua, un")
-    display(round(avg_lq_r; digits=4))
-    display(round(avg_lq_ua; digits=4))
-    display(round(avg_lq_un; digits=4))
+    # println("quality of edc, r, ua, un")
+    # display(round(avg_lq_r; digits=4))
+    # display(round(avg_lq_ua; digits=4))
+    # display(round(avg_lq_un; digits=4))
 
     println("avg earnings, r, ua, un")
     display(round(avg_earnings_r; digits=4))
     display(round(avg_earnings_ua; digits=4))
     display(round(avg_earnings_un; digits=4))
+
+    #     println("avg tuition/earnings, r, ua, un")
+    # display(round(prices.tuition[1]/avg_earnings_r; digits=4))
+    # display(round(prices.tuition[3]/avg_earnings_ua; digits=4))
+    # display(round(prices.tuition[4]/avg_earnings_un; digits=4))
+
+    println("avg tuition/earnings, r, ua, un")
+    display(round(prices.tuition[1] / mean(sim.earnings_sim); digits=4))
+    display(round(prices.tuition[3] / mean(sim.earnings_sim); digits=4))
+    display(round(prices.tuition[4] / mean(sim.earnings_sim); digits=4))
 
 
 
@@ -719,8 +772,18 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
     # lq[4] = log(1.0)
 
     # display(income_thres_top10)
+    share_top10_in_12_cf = 0.0
     share_top10_in_34_cf = 0.0
     if icase == 1
+        sim = monte_carlo_simulation(rng, p, dec, meas, prices, II, 2)
+        # Count the number in the top 25% among those with state 3 or 4
+        count_top10_in_12_cf = count(i -> sim.lhp_sim[i] >= income_thres_top10, idx_12)
+        share_top10_in_12_cf = count_top10_in_12_cf / length(idx_12)
+        # error([share_top10_in_34, share_top10_in_34_cf])
+        println("")
+        println("validation: rural share of college with rural q")
+        display(round(share_top10_in_12_cf; digits=4))
+
         sim = monte_carlo_simulation(rng, p, dec, meas, prices, II, 1)
         # Count the number in the top 25% among those with state 3 or 4
         count_top10_in_34_cf = count(i -> sim.lhp_sim[i] >= income_thres_top10, idx_34)
@@ -729,13 +792,17 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
         println("")
         println("validation: urban share of college with rural q")
         display(round(share_top10_in_34_cf; digits=4))
+
+
     end
 
 
 
     return (kfun0=dec.aplus, pplus=dec.pplus, gridk0=gridk0, KK=agg.meank, share_top25_in_34=share_top25_in_34, land_income_share_state1=land_income_share_state1,
         LL=agg.meanL, r_share=r_share, ua_share=ua_share, ru_share=ru_share, share34=share34, rr_share=rr_share, income_thres_top10=income_thres_top10,
-        share_top10_in_34=share_top10_in_34, share_top10_in_34_cf=share_top10_in_34_cf, welfare=welfare, welfare_add=welfare_add, avg_income=agg.avg_income,
+        share_top10_in_34=share_top10_in_34, share_top10_in_34_cf=share_top10_in_34_cf, 
+        share_top10_in_12=share_top10_in_12, share_top10_in_12_cf=share_top10_in_12_cf, 
+        welfare=welfare, welfare_add=welfare_add, avg_income=agg.avg_income,
         gini_earnings=gini_earnings, meanL=agg.meanL, IGE=IGE, avg_earnings_r=avg_earnings_r, avg_e_u=avg_e_u,
         avg_earnings_ua=avg_earnings_ua, avg_earnings_un=avg_earnings_un, avg_lq_r=avg_lq_r, avg_lq_ua=avg_lq_ua, avg_lq_un=avg_lq_un,
         avg_e_r=avg_e_r, avg_e_ua=avg_e_ua, avg_e_un=avg_e_un, coef_peer=coef_peer, coef_e=coef_e, coef_z=coef_z)
@@ -746,7 +813,7 @@ function calibration(params_in)
 
     println("------------------------------")
 
-    NMOM = 10
+    NMOM = 8
 
     model = zeros(NMOM)
     data = zeros(NMOM)
@@ -756,15 +823,13 @@ function calibration(params_in)
     # Initialize model and data vectors directly
     params = [
         min(max(params_in[1], 0.0), 0.7),
-        max(params_in[2], -0.4),
+        params_in[2],
         params_in[3],
         params_in[4],
         max(params_in[5], 1e-4),
         max(params_in[6], 0.0),
         max(params_in[7], 0.0),
-        max(params_in[8], 0.0),
-        max(params_in[9], 0.0),
-        max(params_in[10], 0.0)
+        max(params_in[8], 0.0)
     ]
 
     println("parameters")
@@ -776,22 +841,6 @@ function calibration(params_in)
     data_w_un = (21.9 * 0.169 + 13.5 * 0.239) / (0.169 + 0.239)
 
 
-    # data = [
-    #     3.53,  # K/Y
-    #     0.445, # 0.445+0.139
-    #     0.248,
-    #     0.139, # 0.144/(1.0-0.584)# 0.139
-    #     0.734,
-    #     0.43,
-    #     data_w_ua / data_w_r,
-    #     data_w_un / data_w_r,
-    #     0.72,
-    #     0.88,
-    #     1.0,
-    #     13471.0 / 30333.0,
-    #     24151.0 / 30333.0,
-    #     54728.0 / 30333.0
-    # ]
     data = [
         3.53,  # K/Y
         0.445, # 0.445+0.139
@@ -801,26 +850,8 @@ function calibration(params_in)
         0.43,
         data_w_ua / data_w_r,
         data_w_un / data_w_r,
-        0.1,
-        0.33
     ]
 
-
-
-
-    # Set parameters and get steady state results
-    # p = setParameters(
-    #     beta=params[1],
-    #     zeta_rr=params[2],
-    #     zeta_ua=params[3],
-    #     zeta_ru=params[4],# sigma_e=params[4]
-    #     sigma_e=params[5],
-    #     r_land=params[6],
-    #     w_ua_r=params[7],
-    #     w_un_r=params[8],
-    #     z_educ=params[9],
-    #     zeta=params[10]
-    # )    
     p = setParameters(
         beta=params[1],
         zeta_rr=params[2],
@@ -829,33 +860,13 @@ function calibration(params_in)
         sigma_e=params[5],
         r_land=params[6],
         w_ua_r=params[7],
-        w_un_r=params[8],
-        gamma_z=params[9],
-        gamma_q=params[10]
+        w_un_r=params[8]
     )
 
     p, HHdecisions, meas, prices, agg = get_Steadystate(p, 1)
     output = output_gen(p, HHdecisions, meas, prices, agg, 1)
 
-    # error(output.avg_e_u)
-
     # Extract model moments from the output
-    # model = [
-    #     output.KK / output.avg_income * 30.0,
-    #     output.rr_share,
-    #     output.ua_share,
-    #     output.ru_share,#output.share34#output.ru_share
-    #     output.share34,
-    #     output.land_income_share_state1,
-    #     output.avg_earnings_ua / output.avg_earnings_r,
-    #     output.avg_earnings_un / output.avg_earnings_r,
-    #     exp(output.avg_lq_r),
-    #     exp(output.avg_lq_ua),
-    #     exp(output.avg_lq_un),
-    #     output.avg_e_r * 30,
-    #     output.avg_e_ua * 30,
-    #     output.avg_e_un * 30
-    # ]
     model = [
         output.KK / output.avg_income * 30.0,
         output.rr_share,
@@ -865,8 +876,6 @@ function calibration(params_in)
         output.land_income_share_state1,
         output.avg_earnings_ua / output.avg_earnings_r,
         output.avg_earnings_un / output.avg_earnings_r,
-        output.coef_z,
-        output.coef_e
     ]
 
 
@@ -876,7 +885,7 @@ function calibration(params_in)
     end
     dist = dist ./ data
     max_dist = sqrt(sum(dist .^ 2)) / NMOM
-    for ii in 1:10
+    for ii in 1:8
         max_dist += 100000 * abs(params_in[ii] - params[ii])
     end
 
@@ -892,22 +901,6 @@ function calibration(params_in)
     println("")
 
     # Prepare labels and changes matrix for DataFrame creation
-    # labels = [
-    #     "K/Y",
-    #     "rural rural share",
-    #     "urban ag share",
-    #     "rural urban share",#"top 25% in urban"
-    #     "top 25% in urban",
-    #     "land income share in rural",
-    #     "wage ua/r",
-    #     "wage un/r",
-    #     "lq r",
-    #     "lq ua",
-    #     "lq un",
-    #     "educ spending/avg income r",
-    #     "educ spending/avg income ua",
-    #     "educ spending/avg income un"
-    # ]
     labels = [
         "K/Y",
         "rural rural share",
@@ -917,8 +910,6 @@ function calibration(params_in)
         "land income share in rural",
         "wage ua/r",
         "wage un/r",
-        "coef abil",
-        "coef exp"
     ]
 
     changes = hcat(model, data)
@@ -935,7 +926,7 @@ function calibration(params_in)
     return max_dist
 end
 
-function calibration_phi_a(params_in)
+function calibration_phi_a(params_in, param_vec)
 
     println("------------------------------")
 
@@ -953,9 +944,18 @@ function calibration_phi_a(params_in)
     display(params)
     println("")
 
-    data[1] = 0.13570229260920416 * (1.0 - 0.3)
+    data[1] = 0.0919
 
-    p = setParameters(phi_a=params[1]) # check the parameters above
+    p = setParameters(
+        beta=param_vec[1],
+        zeta_rr=param_vec[2],
+        zeta_ua=param_vec[3],
+        zeta_ru=param_vec[4], # sigma_e=params[4]
+        sigma_e=param_vec[5],
+        r_land=param_vec[6],
+        w_ua_r=param_vec[7],
+        w_un_r=param_vec[8],
+        phi_a=params[1]) # check the parameters above
     p, HHdecisions, meas, prices, agg = get_Steadystate(p, 1)
     output = output_gen(p, HHdecisions, meas, prices, agg, 1)
 
@@ -993,24 +993,22 @@ end
 
 # Initial guess for the parameters
 initial_guess = [
-    0.5122621033054473
-    -0.2958567563162405
-    -0.059157730764424786
-    0.14412767077202404
-    0.0627529043783745
-    0.29727674992708725
-    1.7267237351404066
-    2.0469328467062087
-    0.1000352924780181
-    0.359291492693918
+    0.47978209759151563
+    -2.6590819427162997
+    -0.056420998786178726
+    2.333513368637667
+    1.1450275468811673
+    0.03154766399731501
+    1.641582353611631
+    1.8988278398104903
 ]
 
 
-res = optimize(calibration, initial_guess, NelderMead())
-display(Optim.minimizer(res))
-error("stop")
+# res = optimize(calibration, initial_guess, NelderMead())
+# display(Optim.minimizer(res))
+# error("stop")
 
-# res = optimize(x -> calibration_phi_a(x), [0.5])
+# res = optimize(x -> calibration_phi_a(x, initial_guess), [0.5])
 # display(Optim.minimizer(res))
 # error("stop")
 
@@ -1032,31 +1030,27 @@ function main(param_vec)  # ← 引数名を変更（元: base_params）
             println("case: benchmark")
             # Set parameters and get steady state results
             setParameters(
-                beta     = param_vec[1],
-                zeta_rr  = param_vec[2],
-                zeta_ua  = param_vec[3],
-                zeta_ru  = param_vec[4], # sigma_e=params[4]
-                sigma_e  = param_vec[5],
-                r_land   = param_vec[6],
-                w_ua_r   = param_vec[7],
-                w_un_r   = param_vec[8],
-                gamma_z  = param_vec[9],
-                gamma_q  = param_vec[10]
+                beta=param_vec[1],
+                zeta_rr=param_vec[2],
+                zeta_ua=param_vec[3],
+                zeta_ru=param_vec[4], # sigma_e=params[4]
+                sigma_e=param_vec[5],
+                r_land=param_vec[6],
+                w_ua_r=param_vec[7],
+                w_un_r=param_vec[8],
             )
         elseif i_case == 2
-            println("case: phi_a = 0")
+            println("case: phi_a = 0.10")
             setParameters(
-                beta     = param_vec[1],
-                zeta_rr  = param_vec[2],
-                zeta_ua  = param_vec[3],
-                zeta_ru  = param_vec[4], # sigma_e=params[4]
-                sigma_e  = param_vec[5],
-                r_land   = param_vec[6],
-                w_ua_r   = param_vec[7],
-                w_un_r   = param_vec[8],
-                gamma_z  = param_vec[9],
-                gamma_q  = param_vec[10],
-                phi_a    = 0.0
+                beta=param_vec[1],
+                zeta_rr=param_vec[2],
+                zeta_ua=param_vec[3],
+                zeta_ru=param_vec[4], # sigma_e=params[4]
+                sigma_e=param_vec[5],
+                r_land=param_vec[6],
+                w_ua_r=param_vec[7],
+                w_un_r=param_vec[8],
+                phi_a=0.09931640625000003
             )
             # setParameters(phi_a=0.0)
             # elseif i_case == 3
@@ -1094,8 +1088,6 @@ p = setParameters(
     r_land=base_params[6],
     w_ua_r=base_params[7],
     w_un_r=base_params[8],
-    gamma_z=base_params[9],
-    gamma_q=base_params[10]
 )
 
 # Number of cases
@@ -1127,7 +1119,7 @@ end
 
 # Labels and column names
 row_labels = ["Welfare (CEV %)", "GDP (%)", "gini earnings (%)", "IGE (%)", "Human capital (%)"]
-col_labels = ["Benchmark", "φₐ = 0"]
+col_labels = ["Benchmark", "phi_a = 0.09"]
 
 # Transpose and round the matrix for DataFrame creation
 rounded_changes = round.(changes', digits=4)

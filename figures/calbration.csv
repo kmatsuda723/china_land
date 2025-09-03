@@ -1,11 +1,9 @@
 moments,model moments,data moments
-K/Y,3.5027,3.53
-rural rural share,0.442,0.445
-urban ag share,0.232,0.248
-rural urban share,0.1384,0.139
-top 25% in urban,0.7529,0.734
-land income share in rural,0.3984,0.43
-wage ua/r,1.7267,1.543
-wage un/r,2.0469,2.0445
-coef abil,0.0979,0.1
-coef exp,0.3317,0.33
+K/Y,3.7083,3.53
+rural rural share,0.3676,0.445
+urban ag share,0.2277,0.248
+rural urban share,0.1378,0.139
+top 25% in urban,0.8114,0.734
+land income share in rural,0.4815,0.43
+wage ua/r,1.7086,1.543
+wage un/r,2.0584,2.0445
