@@ -1,6 +1,7 @@
-variables,Benchmark,φₐ = 0
+variables,Benchmark,phi_a = 0.09
 Welfare (CEV %),0.0,21.213
 GDP (%),0.0,28.6196
 gini earnings (%),21.6863,-10.8789
-IGE (%),43.8759,-9.9606
+IGE (%),44.405,-10.2432
 Human capital (%),0.0,21.8099
+"corr log educ, log z (ppt)",3.441,-2.6666

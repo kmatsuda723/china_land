@@ -19,16 +19,6 @@ Random.seed!(1234)  # Set random seed
 include("toolbox.jl")
 include("types.jl")
 
-# p = setParameters(
-#         beta=params[1],
-#         zeta_rr=params[2],
-#         zeta_ua=params[3],
-#         zeta_ru=params[4],# sigma_e=params[4]
-#         sigma_e=params[5],
-#         r_land=params[6]
-#     )
-
-
 function setParameters(;
     mu=2.0,                    # Risk aversion coefficient (baseline = 3)
     beta=0.5159784284016175,  # Subjective discount factor
@@ -157,10 +147,6 @@ function set_prices(p::Params, KL, land_lost, avg_income, avg_z_r, avg_z_u)
 
     # Tuition by type
     tuition = zeros(p.NI)
-    # tuition[1] = 13471.0 / 30333.0 / 30 * avg_income
-    # tuition[2] = 13471.0 / 30333.0 / 30 * avg_income
-    # tuition[3] = 24151.0 / 30333.0 / 30 * avg_income
-    # tuition[4] = 54728.0 / 30333.0 / 30 * avg_income
     tuition[1] = 52016.0 / 30333.0 / 30 * avg_income
     tuition[2] = 52016.0 / 30333.0 / 30 * avg_income
     tuition[3] = 83223.0 / 30333.0 / 30 * avg_income
@@ -315,26 +301,14 @@ function get_distribution(p::Params, dec::Dec, prices::Prices)::Meas
                             lhplus = log_hplus(p.lz[iz], dec.e[ii, ih, ia, iz] + prices.tuition[ii], p.lh[ih], 0.0, prices.avg_z_u, p)
                         end
 
-
-
-                        # lhplus = log_hplus(p.lz[iz], p.lq[ii], p.lh[ih], 0.0, p)
-
                         ihl, ihr, varphi_h = interp(lhplus, p.lh)
-
-                        # if ii==1
-                        # display(ihl)
-                        # end
-
-                        # Interpolate a'
                         ial, iar, varphi = interp(dec.aplus[ii, ih, ia, iz], prices.a)
 
                         varphi = max(min(varphi, 1.0), 0.0)
                         varphi_h = max(min(varphi_h, 1.0), 0.0)
 
-
                         # Probabilities of choosing education type
                         p_help .= dec.pplus[ii, ih, ia, iz, :]
-
 
                         for izp in 1:p.NZ
                             for iip in 1:p.NI
@@ -501,13 +475,6 @@ function get_Steadystate(p::Params, icase::Int; guess_base::Union{Guess_base,Not
 
     end
 
-    #     display("meanL")
-    # display(agg.meanL)
-    #         display(agg.mass_i)
-
-    #                                 error(agg.mass_h)
-
-
     if iter == maxiter
         println("WARNING: did not converge. err = $err")
     end
@@ -530,6 +497,7 @@ function monte_carlo_simulation(rng::AbstractRNG, p::Params, dec::Dec, meas::Mea
     initial_states = sample_states_from_distribution(rng, meas.m, NN)
     a_sim, h_sim, e_sim, lq_sim, z_sim, wage_sim, wagep_sim, earnings_sim, earningsp_sim, hp_sim, lhp_sim = zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN)
 
+    e_pub_sim = zeros(NN)
     Threads.@threads for i in 1:NN
 
         current_state = initial_states[i]
@@ -569,6 +537,7 @@ function monte_carlo_simulation(rng::AbstractRNG, p::Params, dec::Dec, meas::Mea
         end
 
         hp_sim[i] = exp(lhp_sim[i])
+        e_pub_sim[i] = prices.tuition[ii_sim[i]]
 
         iip_sim[i] = sample_with_weights(rng, 1:p.NI, dec.pplus[ii_sim[i], ih_sim[i], ia_sim[i], iz_sim[i], :])
         wagep_sim[i] = prices.wage[iip_sim[i]]
@@ -577,7 +546,7 @@ function monte_carlo_simulation(rng::AbstractRNG, p::Params, dec::Dec, meas::Mea
     end
 
     # Return all simulated data as a NamedTuple
-    return (a_sim=a_sim, h_sim=h_sim, wage_sim=wage_sim, wagep_sim=wagep_sim,
+    return (a_sim=a_sim, h_sim=h_sim, wage_sim=wage_sim, wagep_sim=wagep_sim, e_pub_sim=e_pub_sim, 
         earnings_sim=earnings_sim, earningsp_sim=earningsp_sim, ii_sim=ii_sim, ipeer_sim=ipeer_sim,
         iip_sim=iip_sim, lhp_sim=lhp_sim, hp_sim=hp_sim, lq_sim=lq_sim, e_sim=e_sim, z_sim=z_sim)
 end
@@ -627,16 +596,6 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
     count_top10_in_34 = count(i -> sim.lhp_sim[i] >= income_thres_top10, idx_34)
     share_top10_in_34 = count_top10_in_34 / length(idx_34)
 
-
-
-    # display(maximum(sim.lhp_sim[sim.ii_sim.==1]))
-    #  display(maximum(sim.lhp_sim[sim.ii_sim.==2]))
-    #   display(maximum(sim.lhp_sim[sim.ii_sim.==3]))
-    #    display(maximum(sim.lhp_sim[sim.ii_sim.==4]))
-
-
-
-    # error(share_top10_in_34)
 
     land_income_sim = r_land * ell ./ (sim.earnings_sim .+ r_land * ell)
 
@@ -717,6 +676,8 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
     reg_beta = (reg_X' * reg_X) \ (reg_X' * reg_Y)
     coef_e = reg_beta[2]
     coef_z = reg_beta[3]
+
+    corr_lepub_lz = cor(log.(sim.e_pub_sim), log.(sim.z_sim))
 
     println("MOMENTS")
     println("")
@@ -802,7 +763,7 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
         LL=agg.meanL, r_share=r_share, ua_share=ua_share, ru_share=ru_share, share34=share34, rr_share=rr_share, income_thres_top10=income_thres_top10,
         share_top10_in_34=share_top10_in_34, share_top10_in_34_cf=share_top10_in_34_cf, 
         share_top10_in_12=share_top10_in_12, share_top10_in_12_cf=share_top10_in_12_cf, 
-        welfare=welfare, welfare_add=welfare_add, avg_income=agg.avg_income,
+        welfare=welfare, welfare_add=welfare_add, avg_income=agg.avg_income, corr_lepub_lz=corr_lepub_lz, 
         gini_earnings=gini_earnings, meanL=agg.meanL, IGE=IGE, avg_earnings_r=avg_earnings_r, avg_e_u=avg_e_u,
         avg_earnings_ua=avg_earnings_ua, avg_earnings_un=avg_earnings_un, avg_lq_r=avg_lq_r, avg_lq_ua=avg_lq_ua, avg_lq_un=avg_lq_un,
         avg_e_r=avg_e_r, avg_e_ua=avg_e_ua, avg_e_un=avg_e_un, coef_peer=coef_peer, coef_e=coef_e, coef_z=coef_z)
@@ -922,6 +883,63 @@ function calibration(params_in)
 
     # Write DataFrame to CSV
     CSV.write("figures/calbration.csv", df)
+
+    in_param = params
+
+        # Prepare labels and changes matrix for DataFrame creation
+    labels = [
+        "beta",
+        "zeta_rr",
+        "zeta_ua",
+        "zeta_ru",#"top 25% in urban"
+        "sigma_e",
+        "r_land",
+        "w_ua",
+        "w_un",
+    ]
+
+
+# ラベル数に合わせて値を取り、丸める
+n = length(labels)
+vals = round.(in_param[1:n]; digits=2)
+
+# 素直に2列のDataFrameを作る
+df = DataFrame(moments = labels, values = vals)
+
+# CSVへ書き出し
+CSV.write("figures/in_param.csv", df)
+
+        ex_param = [
+        p.mu,
+        0.6, #p.rho,
+        p.gamma_z,
+        p.gamma_q,
+        0.5,
+        0.27,
+        52016.0,
+        83223.0,
+        119645.0
+    ]
+
+        labels = [
+        "mu",
+        "rho (persistence of z)",
+        "gamma_z",
+        "gamma_e",#"top 25% in urban"
+        "phi_a",
+        "phi_a - phi_n",
+        "tuition r (yuan)",
+        "tuition ua (yuan)",
+        "tuition un (yuan)"
+    ]
+
+# ラベル数に合わせて値を取り、丸める
+n = length(labels)
+vals = round.(ex_param[1:n]; digits=2)
+
+# 素直に2列のDataFrameを作る
+df = DataFrame(moments = labels, values = vals)
+CSV.write("figures/ex_param.csv", df)
 
     return max_dist
 end
@@ -1094,7 +1112,7 @@ p = setParameters(
 Ncase = 2
 
 # Initialize welfare change container
-changes = zeros(Ncase, 5)
+changes = zeros(Ncase, 6)
 
 for icase = 1:Ncase
     local ii = icase
@@ -1105,12 +1123,14 @@ for icase = 1:Ncase
             changes[ii, 3] = output[icase].gini_earnings
             changes[ii, 4] = output[icase].IGE
             changes[ii, 5] = 0.0
+            changes[ii, 6] = output[icase].corr_lepub_lz
         else
             changes[ii, 1] = ((output[icase].welfare - (output[1].welfare - output[1].welfare_add)) / output[1].welfare_add)^(1.0 / (1.0 - p.mu)) - 1.0
             changes[ii, 2] = output[icase].avg_income / output[1].avg_income - 1.0
             changes[ii, 3] = output[icase].gini_earnings / output[1].gini_earnings - 1.0
             changes[ii, 4] = output[icase].IGE / output[1].IGE - 1.0
             changes[ii, 5] = output[icase].meanL / output[1].meanL - 1.0
+            changes[ii, 6] = output[icase].corr_lepub_lz - output[1].corr_lepub_lz
         end
         changes[ii, :] = changes[ii, :] * 100.0
         ii += 1
@@ -1118,7 +1138,7 @@ for icase = 1:Ncase
 end
 
 # Labels and column names
-row_labels = ["Welfare (CEV %)", "GDP (%)", "gini earnings (%)", "IGE (%)", "Human capital (%)"]
+row_labels = ["Welfare (CEV %)", "GDP (%)", "gini earnings (%)", "IGE (%)", "Human capital (%)", "corr log educ, log z (ppt)"]
 col_labels = ["Benchmark", "phi_a = 0.09"]
 
 # Transpose and round the matrix for DataFrame creation
