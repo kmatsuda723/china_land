@@ -26,14 +26,14 @@ function setParameters(;
     alpha=0.36,                # Capital's share of income
     b=0.0,                     # Borrowing limit
     NH=10,                      # Number of discretized labor productivity states
-    rho=0.6,                   # AR(1) coefficient for labor productivity process
+    rho=0.16,                   # AR(1) coefficient for labor productivity process
     gamma_h=0.0,               # Parameter for additional labor-related processes (unused here)
     gamma_z=0.09,              # Parameter for additional shock process (unused here)
     gamma_q=0.59,               # Parameter for another process (unused here)
     zeta_ua=-0.11330187603883306,  # Utility discount or cost parameter for urban agricultural group
     r_land=0.5249142987075832,    # Land return rate
-    phi_a=0.5,                 # Parameter related to land risk for agricultural hukou
-    delta_n=0.27,              # Additional land risk parameter
+    phi_a=0.374,                 # Parameter related to land risk for agricultural hukou
+    delta_n=0.53,              # Additional land risk parameter
     sigma_e=0.19336480726308442,  # Scale parameter for idiosyncratic shocks
     zeta_ru=0.25515986986304473,    # Utility discount or cost parameter for rural urban group
     zeta_rr=-0.2825947270401527,   # Utility discount or cost parameter for rural rural group
@@ -62,7 +62,7 @@ function setParameters(;
     z = exp.(lz)  # Convert from logs to levels
 
     # Discretized human capital (labor supply) grid
-    lh = collect(range(-3.5, stop=-1.5, length=NH))
+    lh = collect(range(-4.0, stop=-2.0, length=NH))
     h = exp.(lh)  # Levels
 
     # ========================================================= #
@@ -147,10 +147,15 @@ function set_prices(p::Params, KL, land_lost, avg_income, avg_z_r, avg_z_u)
 
     # Tuition by type
     tuition = zeros(p.NI)
-    tuition[1] = 52016.0 / 30333.0 / 30 * avg_income
-    tuition[2] = 52016.0 / 30333.0 / 30 * avg_income
-    tuition[3] = 83223.0 / 30333.0 / 30 * avg_income
-    tuition[4] = 119645.0 / 30333.0 / 30 * avg_income
+    # tuition[1] = 52016.0 / 30333.0 / 30 * avg_income
+    # tuition[2] = 52016.0 / 30333.0 / 30 * avg_income
+    # tuition[3] = 83223.0 / 30333.0 / 30 * avg_income
+    # tuition[4] = 119645.0 / 30333.0 / 30 * avg_income
+
+    tuition[1] = 52400.0 / 30333.0 / 30 * avg_income
+    tuition[2] = 52400.0 / 30333.0 / 30 * avg_income
+    tuition[3] = 83600.0 / 30333.0 / 30 * avg_income
+    tuition[4] = 122500.0 / 30333.0 / 30 * avg_income
 
     return Prices(r, wage, phi, a, ell, avg_income, tuition, a_u, KL, land_lost, avg_z_r, avg_z_u)
 end
@@ -168,7 +173,7 @@ function solve_household(p::Params, prices::Prices)
     tv = similar(iaplus)                            # Updated value function
 
     err = 20.0
-    maxiter = 10
+    maxiter = 50
     iter = 1
 
     NG = 20
@@ -227,8 +232,8 @@ function solve_household(p::Params, prices::Prices)
                         end
                         # Interpolation for next period's value
                         ial, iar, varphi = interp(a_plus, prices.a)
-                        varphi = max(min(varphi, 1.0), 0.0)
-                        varphi_h = max(min(varphi_h, 1.0), 0.0)
+                        # varphi = max(min(varphi, 1.0), 0.0)
+                        # varphi_h = max(min(varphi_h, 1.0), 0.0)
                         vpr = 0.0
                         vpr_add = 0.0
                         @inbounds for izp in 1:p.NZ
@@ -408,10 +413,10 @@ function get_Steadystate(p::Params, icase::Int; guess_base::Union{Guess_base,Not
 
     # Initial values
     KL = 6.8     # Capital-labor ratio guess
-    land_lost = 0.3
-    avg_income = 2.8
-    avg_z_r = 0.3
-    avg_z_u = 2.2
+    land_lost = 0.2443
+    avg_income = 0.0642
+    avg_z_r = 0.3175
+    avg_z_u = 2.2185
 
     if icase == 3
         if guess_base === nothing
@@ -809,9 +814,13 @@ function calibration(params_in)
         0.139, # 0.144/(1.0-0.584)# 0.139
         0.734,
         0.43,
-        data_w_ua / data_w_r,
-        data_w_un / data_w_r,
+        1.64,
+        2.17,
     ]
+
+    # display(data_w_ua / data_w_r)
+    # display(data_w_un / data_w_r)
+    # error("check")
 
     p = setParameters(
         beta=params[1],
@@ -911,14 +920,14 @@ CSV.write("figures/in_param.csv", df)
 
         ex_param = [
         p.mu,
-        0.6, #p.rho,
+        0.16, #p.rho,
         p.gamma_z,
         p.gamma_q,
-        0.5,
-        0.27,
-        52016.0,
-        83223.0,
-        119645.0
+        0.374,
+        0.53,
+        52400.0,
+        83600.0,
+        122500.0
     ]
 
         labels = [
@@ -1011,20 +1020,20 @@ end
 
 # Initial guess for the parameters
 initial_guess = [
-    0.47978209759151563
-    -2.6590819427162997
-    -0.056420998786178726
-    2.333513368637667
-    1.1450275468811673
-    0.03154766399731501
-    1.641582353611631
-    1.8988278398104903
+  0.47779143674495533
+ -4.221095334210588
+ -0.05474569770102006
+  2.9858810337785684
+  1.831184218637923
+  0.028976820622901113
+  1.6085058822725786
+  1.8990798135220495
 ]
 
 
-# res = optimize(calibration, initial_guess, NelderMead())
-# display(Optim.minimizer(res))
-# error("stop")
+res = optimize(calibration, initial_guess, NelderMead())
+display(Optim.minimizer(res))
+error("stop")
 
 # res = optimize(x -> calibration_phi_a(x, initial_guess), [0.5])
 # display(Optim.minimizer(res))

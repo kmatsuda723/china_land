@@ -1,10 +1,10 @@
 moments,values
 mu,2.0
-rho (persistence of z),0.6
+rho (persistence of z),0.16
 gamma_z,0.09
 gamma_e,0.59
-phi_a,0.5
-phi_a - phi_n,0.27
-tuition r (yuan),52016.0
-tuition ua (yuan),83223.0
-tuition un (yuan),119645.0
+phi_a,0.37
+phi_a - phi_n,0.53
+tuition r (yuan),52400.0
+tuition ua (yuan),83600.0
+tuition un (yuan),122500.0
