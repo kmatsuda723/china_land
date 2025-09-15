@@ -1,7 +1,7 @@
 # ======================================================= #
 
 # ======================================================= #
-
+ENV["GKSwstype"] = "100"
 # import libraries
 using Plots
 using Optim
@@ -13,11 +13,15 @@ using DataFrames
 using CSV
 using StatsBase
 using ThreadsX
+using StatsPlots
+using Plots.PlotMeasures
+
+gr()
+Plots.default(show=false)        # VSCode の自動表示を抑止
 
 Random.seed!(1234)  # Set random seed
 
 include("toolbox.jl")
-include("types.jl")
 
 function setParameters(;
     mu=2.0,                    # Risk aversion coefficient (baseline = 3)
@@ -101,21 +105,20 @@ function setParameters(;
 
     # z_educ = 2.0
 
-    return Params(
-        mu, beta, delta, alpha, b, gamma_z, gamma_q, gamma_h, NH,
-        h, z, lh, lz, lq, prob, income_thres_top10_base,
-        NA, NG, NZ, NI, mv_cost, land_risk, r_land, sigma_e, dutil, zeta_rr, z_educ,
-        w_un_r, w_ua_r, zeta
+    return (
+        mu=mu, beta=beta, delta=delta, alpha=alpha, b=b, gamma_z=gamma_z, gamma_q=gamma_q, gamma_h=gamma_h, NH=NH,
+        h=h, z=z, lh=lh, lz=lz, lq=lq, prob=prob, income_thres_top10_base=income_thres_top10_base,
+        NA=NA, NG=NG, NZ=NZ, NI=NI, mv_cost=mv_cost, land_risk=land_risk, r_land=r_land, sigma_e=sigma_e, dutil=dutil, zeta_rr=zeta_rr, z_educ=z_educ,
+        w_un_r=w_un_r, w_ua_r=w_ua_r, zeta=zeta
     )
 end
 
-function log_hplus(logz, educ, logh, logxi, peer, p::Params)
-    # return log(p.z_educ) + p.gamma_z*logz + p.gamma_q*logq + p.gamma_h*logh + logxi
+function log_hplus(logz, educ, logh, logxi, peer, p)
     return log(p.z_educ) + p.gamma_z * logz + p.gamma_q * log(max(educ, 1e-4)) + p.zeta * log(peer) + p.gamma_h * logh + logxi
 
 end
 
-function set_prices(p::Params, KL, land_lost, avg_income, avg_z_r, avg_z_u)
+function set_prices(p, KL, land_lost, avg_income, avg_z_r, avg_z_u)
     # Use a fixed interest rate
     r = 1.021^30 - 1.0
 
@@ -157,11 +160,15 @@ function set_prices(p::Params, KL, land_lost, avg_income, avg_z_r, avg_z_u)
     tuition[3] = 83600.0 / 30333.0 / 30 * avg_income
     tuition[4] = 122500.0 / 30333.0 / 30 * avg_income
 
-    return Prices(r, wage, phi, a, ell, avg_income, tuition, a_u, KL, land_lost, avg_z_r, avg_z_u)
+    # return Prices(r, wage, phi, a, ell, avg_income, tuition, a_u, KL, land_lost, avg_z_r, avg_z_u)
+    return (
+        r=r, wage=wage, phi=phi, a=a, ell=ell, avg_income=avg_income, tuition=tuition, a_u=a_u,
+        KL=KL, land_lost=land_lost, avg_z_r=avg_z_r, avg_z_u=avg_z_u
+    )
 end
 
 
-function solve_household(p::Params, prices::Prices)
+function solve_household(p, prices)
     # Initialize some variables
     iaplus = zeros(p.NI, p.NH, p.NA, p.NZ)           # Index of optimal k' choice
     aplus = similar(iaplus)                         # Optimal k' choice
@@ -282,10 +289,11 @@ function solve_household(p::Params, prices::Prices)
         println("WARNING!! @solve_household: iteration reached max: iter=$iter, err=$err")
     end
 
-    return Dec(aplus, e, pplus, v, v_add)
+    # return Dec(aplus, e, pplus, v, v_add)
+    return (aplus=aplus, e=e, pplus=pplus, v=v, v_add=v_add)
 end
 
-function get_distribution(p::Params, dec::Dec, prices::Prices)::Meas
+function get_distribution(p, dec, prices)
     m = ones(p.NI, p.NH, p.NA, p.NZ) / (p.NI * p.NH * p.NA * p.NZ)  # Initial guess of distribution
     m_new = zeros(p.NI, p.NH, p.NA, p.NZ)                          # Updated distribution
 
@@ -346,10 +354,11 @@ function get_distribution(p::Params, dec::Dec, prices::Prices)::Meas
         println("WARNING!! get_distribution: iteration reached max: iter = $iter, err = $err")
     end
 
-    return Meas(m)
+    # return Meas(m)
+    return (m=m,)
 end
 
-function aggregation(p::Params, dec::Dec, meas::Meas, prices::Prices)::Agg
+function aggregation(p, dec, meas, prices)
     m = meas.m
 
     meanL = 0.0
@@ -394,23 +403,21 @@ function aggregation(p::Params, dec::Dec, meas::Meas, prices::Prices)::Agg
 
     # error(mass_h)
 
-
-    return Agg(
-        meank,
-        meanL,
-        land_lost,
-        avg_income,
-        mass_i,
-        mass_z,
-        mass_a,
-        mass_h,
-        avg_z_r,
-        avg_z_u
+    return (
+        meank=meank,
+        meanL=meanL,
+        land_lost=land_lost,
+        avg_income=avg_income,
+        mass_i=mass_i,
+        mass_z=mass_z,
+        mass_a=mass_a,
+        mass_h=mass_h,
+        avg_z_r=avg_z_r,
+        avg_z_u=avg_z_u
     )
 end
 
-function get_Steadystate(p::Params, icase::Int; guess_base::Union{Guess_base,Nothing}=nothing)
-
+function get_Steadystate(p, icase::Int; guess_base=nothing)
     # Initial values
     KL = 6.8     # Capital-labor ratio guess
     land_lost = 0.2443
@@ -418,14 +425,14 @@ function get_Steadystate(p::Params, icase::Int; guess_base::Union{Guess_base,Not
     avg_z_r = 0.3175
     avg_z_u = 2.2185
 
-    if icase == 3
-        if guess_base === nothing
-            error("guess_base must be provided for icase == 3")
-        end
-        KL = guess_base.KL
-        land_lost = guess_base.land_lost
-        avg_income = guess_base.avg_income
-    end
+    # if icase == 3
+    #     if guess_base === nothing
+    #         error("guess_base must be provided for icase == 3")
+    #     end
+    #     KL = guess_base.KL
+    #     land_lost = guess_base.land_lost
+    #     avg_income = guess_base.avg_income
+    # end
 
     err = 1.0
     errTol = 1e-2
@@ -433,16 +440,25 @@ function get_Steadystate(p::Params, icase::Int; guess_base::Union{Guess_base,Not
     maxiter = 50
     adj = 0.2
 
-    # Preallocate
-    prices = Prices(0.0, zeros(p.NI), 0.0, zeros(p.NA), 0.0, 0.0, zeros(p.NI), 0.0, 0.0, 0.0, 0.0, 0.0)
-    dec = Dec(zeros(p.NI, p.NH, p.NA, p.NZ), zeros(p.NI, p.NH, p.NA, p.NZ), zeros(p.NI, p.NH, p.NA, p.NZ, p.NI), zeros(p.NI, p.NH, p.NA, p.NZ), zeros(p.NI, p.NH, p.NA, p.NZ))
-    meas = Meas(zeros(p.NI, p.NH, p.NA, p.NZ))
-    agg = Agg(0.0, 0.0, 0.0, 0.0, zeros(p.NI), zeros(p.NZ), zeros(p.NA), zeros(p.NH), 0.0, 0.0)
+    # # Preallocate
+    # prices = Prices(0.0, zeros(p.NI), 0.0, zeros(p.NA), 0.0, 0.0, zeros(p.NI), 0.0, 0.0, 0.0, 0.0, 0.0)
+    # dec = Dec(zeros(p.NI, p.NH, p.NA, p.NZ), zeros(p.NI, p.NH, p.NA, p.NZ), zeros(p.NI, p.NH, p.NA, p.NZ, p.NI), zeros(p.NI, p.NH, p.NA, p.NZ), zeros(p.NI, p.NH, p.NA, p.NZ))
+    # meas = Meas(zeros(p.NI, p.NH, p.NA, p.NZ))
+    # agg = Agg(0.0, 0.0, 0.0, 0.0, zeros(p.NI), zeros(p.NZ), zeros(p.NA), zeros(p.NH), 0.0, 0.0)
+
+    prices = nothing
+    dec = nothing
+    meas = nothing
+    agg = nothing
 
     while err > errTol && iter < maxiter
         iter += 1
 
-        prices = set_prices(p, KL, land_lost, avg_income, avg_z_r, avg_z_u)
+        if icase == 1
+            prices = set_prices(p, KL, land_lost, avg_income, avg_z_r, avg_z_u)
+        else
+            prices = set_prices(p, KL, land_lost, guess_base.avg_income, avg_z_r, avg_z_u)
+        end
         dec = solve_household(p, prices)
         meas = get_distribution(p, dec, prices)
         agg = aggregation(p, dec, meas, prices)
@@ -466,9 +482,9 @@ function get_Steadystate(p::Params, icase::Int; guess_base::Union{Guess_base,Not
             round(err, digits=4)))
 
         # Partial eq
-        if icase == 3
-            break
-        end
+        # if icase == 3
+        #     break
+        # end
 
         # Update guesses with damping
         avg_income += adj * (avg_income_new - avg_income)
@@ -487,7 +503,7 @@ function get_Steadystate(p::Params, icase::Int; guess_base::Union{Guess_base,Not
     return p, dec, meas, prices, agg
 end
 
-function monte_carlo_simulation(rng::AbstractRNG, p::Params, dec::Dec, meas::Meas, prices::Prices, NN, icase_sim)
+function monte_carlo_simulation(rng::AbstractRNG, p, dec, meas, prices, NN, icase_sim)
     @unpack h, lz, lq, lh, z, r_land = p
     @unpack a, ell = prices
 
@@ -503,7 +519,7 @@ function monte_carlo_simulation(rng::AbstractRNG, p::Params, dec::Dec, meas::Mea
     a_sim, h_sim, e_sim, lq_sim, z_sim, wage_sim, wagep_sim, earnings_sim, earningsp_sim, hp_sim, lhp_sim = zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN), zeros(NN)
 
     e_pub_sim = zeros(NN)
-    Threads.@threads for i in 1:NN
+    for i in 1:NN
 
         current_state = initial_states[i]
         ii_sim[i], ih_sim[i], ia_sim[i], iz_sim[i] = current_state[1], current_state[2], current_state[3], current_state[4]
@@ -527,8 +543,8 @@ function monte_carlo_simulation(rng::AbstractRNG, p::Params, dec::Dec, meas::Mea
         elseif icase_sim == 2 && (ii_sim[i] == 1 || ii_sim[i] == 2) # validation exercise
             ipeer_sim[i] = prices.avg_z_u
             ua_share_help = 0.248
-            un_share_help = 1.0-0.445-0.248-0.139
-            exp_help = prices.tuition[3]*ua_share_help/(ua_share_help+un_share_help) + prices.tuition[4]*un_share_help/(ua_share_help+un_share_help)
+            un_share_help = 1.0 - 0.445 - 0.248 - 0.139
+            exp_help = prices.tuition[3] * ua_share_help / (ua_share_help + un_share_help) + prices.tuition[4] * un_share_help / (ua_share_help + un_share_help)
             lhp_sim[i] = log_hplus(lz[iz_sim[i]], exp_help, lh[ih_sim[i]], 0.0, prices.avg_z_u, p)
         else
 
@@ -551,14 +567,14 @@ function monte_carlo_simulation(rng::AbstractRNG, p::Params, dec::Dec, meas::Mea
     end
 
     # Return all simulated data as a NamedTuple
-    return (a_sim=a_sim, h_sim=h_sim, wage_sim=wage_sim, wagep_sim=wagep_sim, e_pub_sim=e_pub_sim, 
+    return (a_sim=a_sim, h_sim=h_sim, wage_sim=wage_sim, wagep_sim=wagep_sim, e_pub_sim=e_pub_sim,
         earnings_sim=earnings_sim, earningsp_sim=earningsp_sim, ii_sim=ii_sim, ipeer_sim=ipeer_sim,
         iip_sim=iip_sim, lhp_sim=lhp_sim, hp_sim=hp_sim, lq_sim=lq_sim, e_sim=e_sim, z_sim=z_sim)
 end
 
 
 
-function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
+function output_gen(p, dec, meas, prices, agg, icase)
     @unpack r_land, income_thres_top10_base = p
     @unpack ell = prices
 
@@ -570,7 +586,8 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
     II = 50000
 
     rng = MersenneTwister(1234)
-    sim = monte_carlo_simulation(rng, p::Params, dec, meas, prices, II, 0)
+    # sim = monte_carlo_simulation(rng, p::Params, dec, meas, prices, II, 0)
+    sim = monte_carlo_simulation(rng, p, dec, meas, prices, II, 0)
     gridk0 = prices.a
 
     # Determine the threshold for the top 25% (75th percentile)
@@ -657,6 +674,9 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
     reg_beta = (reg_X' * reg_X) \ (reg_X' * reg_Y)
     IGE = reg_beta[2]
 
+    # display([log(sim.earnings_sim[1]), log(sim.earningsp_sim[1]), IGE])
+    # error("stop")
+
     top10_sim = Int.(sim.lhp_sim .≥ quantile(sim.lhp_sim, 0.9))
     reg_X = hcat(reg_cons, log.(sim.e_sim + prices.tuition[sim.ii_sim]), log.(sim.z_sim), log.(sim.ipeer_sim))
     reg_Y = top10_sim
@@ -738,9 +758,9 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
     # lq[4] = log(1.0)
 
     # display(income_thres_top10)
-    share_top10_in_12_cf = 0.0
-    share_top10_in_34_cf = 0.0
-    if icase == 1
+    # share_top10_in_12_cf = 0.0
+    # share_top10_in_34_cf = 0.0
+    # if icase == 1
         sim = monte_carlo_simulation(rng, p, dec, meas, prices, II, 2)
         # Count the number in the top 25% among those with state 3 or 4
         count_top10_in_12_cf = count(i -> sim.lhp_sim[i] >= income_thres_top10, idx_12)
@@ -760,18 +780,18 @@ function output_gen(p::Params, dec::Dec, meas::Meas, prices::Prices, agg, icase)
         display(round(share_top10_in_34_cf; digits=4))
 
 
-    end
+    # end
 
 
 
     return (kfun0=dec.aplus, pplus=dec.pplus, gridk0=gridk0, KK=agg.meank, share_top25_in_34=share_top25_in_34, land_income_share_state1=land_income_share_state1,
         LL=agg.meanL, r_share=r_share, ua_share=ua_share, ru_share=ru_share, share34=share34, rr_share=rr_share, income_thres_top10=income_thres_top10,
-        share_top10_in_34=share_top10_in_34, share_top10_in_34_cf=share_top10_in_34_cf, 
-        share_top10_in_12=share_top10_in_12, share_top10_in_12_cf=share_top10_in_12_cf, 
-        welfare=welfare, welfare_add=welfare_add, avg_income=agg.avg_income, corr_lepub_lz=corr_lepub_lz, 
+        share_top10_in_34=share_top10_in_34, share_top10_in_34_cf=share_top10_in_34_cf, m=meas.m, v=dec.v, v_add=dec.v_add,
+        share_top10_in_12=share_top10_in_12, share_top10_in_12_cf=share_top10_in_12_cf, validation=share_top10_in_12_cf-share_top10_in_12, 
+        welfare=welfare, welfare_add=welfare_add, avg_income=agg.avg_income, corr_lepub_lz=corr_lepub_lz,
         gini_earnings=gini_earnings, meanL=agg.meanL, IGE=IGE, avg_earnings_r=avg_earnings_r, avg_e_u=avg_e_u,
         avg_earnings_ua=avg_earnings_ua, avg_earnings_un=avg_earnings_un, avg_lq_r=avg_lq_r, avg_lq_ua=avg_lq_ua, avg_lq_un=avg_lq_un,
-        avg_e_r=avg_e_r, avg_e_ua=avg_e_ua, avg_e_un=avg_e_un, coef_peer=coef_peer, coef_e=coef_e, coef_z=coef_z)
+        avg_e_r=avg_e_r, avg_e_ua=avg_e_ua, avg_e_un=avg_e_un, coef_peer=coef_peer, coef_e=coef_e, coef_z=coef_z, ell_eq=ell)
 
 end
 
@@ -809,9 +829,9 @@ function calibration(params_in)
 
     data = [
         3.53,  # K/Y
-        0.445, # 0.445+0.139
-        0.248,
-        0.139, # 0.144/(1.0-0.584)# 0.139
+        0.472, # 0.445+0.139
+        0.224,
+        0.126, # 0.144/(1.0-0.584)# 0.139
         0.734,
         0.43,
         1.64,
@@ -895,7 +915,7 @@ function calibration(params_in)
 
     in_param = params
 
-        # Prepare labels and changes matrix for DataFrame creation
+    # Prepare labels and changes matrix for DataFrame creation
     labels = [
         "beta",
         "zeta_rr",
@@ -908,17 +928,17 @@ function calibration(params_in)
     ]
 
 
-# ラベル数に合わせて値を取り、丸める
-n = length(labels)
-vals = round.(in_param[1:n]; digits=2)
+    # ラベル数に合わせて値を取り、丸める
+    n = length(labels)
+    vals = round.(in_param[1:n]; digits=2)
 
-# 素直に2列のDataFrameを作る
-df = DataFrame(moments = labels, values = vals)
+    # 素直に2列のDataFrameを作る
+    df = DataFrame(moments=labels, values=vals)
 
-# CSVへ書き出し
-CSV.write("figures/in_param.csv", df)
+    # CSVへ書き出し
+    CSV.write("figures/in_param.csv", df)
 
-        ex_param = [
+    ex_param = [
         p.mu,
         0.16, #p.rho,
         p.gamma_z,
@@ -930,7 +950,7 @@ CSV.write("figures/in_param.csv", df)
         122500.0
     ]
 
-        labels = [
+    labels = [
         "mu",
         "rho (persistence of z)",
         "gamma_z",
@@ -942,13 +962,13 @@ CSV.write("figures/in_param.csv", df)
         "tuition un (yuan)"
     ]
 
-# ラベル数に合わせて値を取り、丸める
-n = length(labels)
-vals = round.(ex_param[1:n]; digits=2)
+    # ラベル数に合わせて値を取り、丸める
+    n = length(labels)
+    vals = round.(ex_param[1:n]; digits=2)
 
-# 素直に2列のDataFrameを作る
-df = DataFrame(moments = labels, values = vals)
-CSV.write("figures/ex_param.csv", df)
+    # 素直に2列のDataFrameを作る
+    df = DataFrame(moments=labels, values=vals)
+    CSV.write("figures/ex_param.csv", df)
 
     return max_dist
 end
@@ -971,7 +991,7 @@ function calibration_phi_a(params_in, param_vec)
     display(params)
     println("")
 
-    data[1] = 0.0919
+    data[1] = 0.139 * 2.0 / 3.0
 
     p = setParameters(
         beta=param_vec[1],
@@ -1019,21 +1039,32 @@ end
 ######################################################
 
 # Initial guess for the parameters
+# initial_guess = [
+#     0.47779143674495533
+#     -4.221095334210588
+#     -0.05474569770102006
+#     2.9858810337785684
+#     1.831184218637923
+#     0.028976820622901113
+#     1.6085058822725786
+#     1.8990798135220495
+# ]
+
 initial_guess = [
-  0.47779143674495533
- -4.221095334210588
- -0.05474569770102006
-  2.9858810337785684
-  1.831184218637923
-  0.028976820622901113
-  1.6085058822725786
-  1.8990798135220495
+  0.4812302192713535
+ -4.832374962387025
+ -0.055335557291067976
+  3.139710947266862
+  1.830218788934081
+  0.026864627128996912
+  1.5838614464182614
+  1.9322557193322103
 ]
 
 
-res = optimize(calibration, initial_guess, NelderMead())
-display(Optim.minimizer(res))
-error("stop")
+# res = optimize(calibration, initial_guess, NelderMead())
+# display(Optim.minimizer(res))
+# error("stop")
 
 # res = optimize(x -> calibration_phi_a(x, initial_guess), [0.5])
 # display(Optim.minimizer(res))
@@ -1046,10 +1077,11 @@ error("stop")
 
 
 function main(param_vec)  # ← 引数名を変更（元: base_params）
-    Ncase = 2
+    Ncase = 3
     output = Vector{NamedTuple}(undef, Ncase)
     income_thres_top10_base = 0.0
     guess_base = nothing
+    a = nothing
 
     for i_case in 1:Ncase
         # set parameters
@@ -1067,7 +1099,7 @@ function main(param_vec)  # ← 引数名を変更（元: base_params）
                 w_un_r=param_vec[8],
             )
         elseif i_case == 2
-            println("case: phi_a = 0.10")
+            println("case: phi_a = 0.0")
             setParameters(
                 beta=param_vec[1],
                 zeta_rr=param_vec[2],
@@ -1077,12 +1109,29 @@ function main(param_vec)  # ← 引数名を変更（元: base_params）
                 r_land=param_vec[6],
                 w_ua_r=param_vec[7],
                 w_un_r=param_vec[8],
-                phi_a=0.09931640625000003
+                phi_a=0.0
             )
             # setParameters(phi_a=0.0)
             # elseif i_case == 3
             #     println("case: phi_a = 0 PE")
             #     setParameters(phi_a=0.0)
+        elseif i_case == 3
+            println("case: phi's = 0.0")
+            setParameters(
+                beta=param_vec[1],
+                zeta_rr=param_vec[2],
+                zeta_ua=param_vec[3],
+                zeta_ru=param_vec[4], # sigma_e=params[4]
+                sigma_e=param_vec[5],
+                r_land=param_vec[6],
+                w_ua_r=param_vec[7],
+                w_un_r=param_vec[8],
+                phi_a=0.0,
+                delta_n=0.0 #0.09931640625000003
+            )
+            # setParameters(phi_a=0.0)
+            # elseif i_case == 3
+            #     println("case: phi_a = 0 PE")
         end
 
         if i_case == 1
@@ -1094,15 +1143,19 @@ function main(param_vec)  # ← 引数名を変更（元: base_params）
 
         if i_case == 1
             income_thres_top10_base = output[i_case].income_thres_top10
-            guess_base = Guess_base(prices.KL, prices.land_lost, prices.avg_income)
+            # guess_base = Guess_base(prices.KL, prices.land_lost, prices.avg_income)
+            guess_base = (KL=prices.KL, land_lost=prices.land_lost, avg_income=prices.avg_income)
+            a = prices.a
         end
     end
 
-    return output, income_thres_top10_base
+
+
+    return output, income_thres_top10_base, a
 end
 
 # Run main simulation to get outputs
-output, income_thres_top10_base = main(initial_guess)
+output, income_thres_top10_base, a = main(initial_guess)
 
 base_params = initial_guess
 
@@ -1118,37 +1171,117 @@ p = setParameters(
 )
 
 # Number of cases
-Ncase = 2
+Ncase = 3
 
 # Initialize welfare change container
-changes = zeros(Ncase, 6)
+changes = zeros(Ncase, 11)
 
 for icase = 1:Ncase
-    local ii = icase
+
+    num_ru = zeros(2)
+    den_ru = zeros(2)
+    num_ru_az = zeros(2, p.NZ, p.NA)
+    den_ru_az = zeros(2, p.NZ, p.NA)
+    num_az = zeros(p.NZ, p.NA)
+    den_az = zeros(p.NZ, p.NA)
+    for ii in 1:p.NI
+        for ia in 1:p.NA
+            for ih in 1:p.NH
+                for iz in 1:p.NZ
+                    wel_change = ((sum(output[icase].v[ii, ih, ia, iz]) - (sum(output[1].v[ii, ih, ia, iz]) - sum(output[1].v_add[ii, ih, ia, iz]))) / sum(output[1].v_add[ii, ih, ia, iz]))^(1.0 / (1.0 - p.mu)) - 1.0
+                    if ii == 1 || ii == 2
+                        num_ru[1] += output[1].m[ii, ih, ia, iz] * wel_change
+                        den_ru[1] += output[1].m[ii, ih, ia, iz]
+                        num_ru_az[1, iz, ia] += output[1].m[ii, ih, ia, iz] * wel_change
+                        den_ru_az[1, iz, ia] += output[1].m[ii, ih, ia, iz]
+                    else
+                        num_ru[2] += output[1].m[ii, ih, ia, iz] * wel_change
+                        den_ru[2] += output[1].m[ii, ih, ia, iz]
+                        num_ru_az[2, iz, ia] += output[1].m[ii, ih, ia, iz] * wel_change
+                        den_ru_az[2, iz, ia] += output[1].m[ii, ih, ia, iz]
+                    end
+                    num_az[iz, ia] += output[1].m[ii, ih, ia, iz] * wel_change
+                    den_az[iz, ia] += output[1].m[ii, ih, ia, iz]
+                end
+            end
+        end
+    end
+    wel_ru = num_ru ./ max.(den_ru, 0.0)
+    wel_ru_az = num_ru_az ./ max.(den_ru_az, 0.0)
+    wel_az = num_az ./ max.(den_az, 0.0)
+
+    display(wel_az)
+
+
+
     if icase == 1 || icase == 2 || icase == 3
         if icase == 1
-            changes[ii, 1] = ((output[icase].welfare - (output[1].welfare - output[1].welfare_add)) / output[1].welfare_add)^(1.0 / (1.0 - p.mu)) - 1.0
-            changes[ii, 2] = 0.0
-            changes[ii, 3] = output[icase].gini_earnings
-            changes[ii, 4] = output[icase].IGE
-            changes[ii, 5] = 0.0
-            changes[ii, 6] = output[icase].corr_lepub_lz
+            changes[icase, 1] = ((output[icase].welfare - (output[1].welfare - output[1].welfare_add)) / output[1].welfare_add)^(1.0 / (1.0 - p.mu)) - 1.0
+            changes[icase, 2] = 0.0
+            changes[icase, 3] = output[icase].gini_earnings
+            changes[icase, 4] = output[icase].IGE
+            changes[icase, 5] = 0.0
+            changes[icase, 6] = output[icase].corr_lepub_lz
+            changes[icase, 7] = output[icase].ru_share
+            changes[icase, 8] = 0.0
+            changes[icase, 9] = 0.0
+            changes[icase, 10] = 0.0
+            changes[icase, 11] = output[icase].validation
         else
-            changes[ii, 1] = ((output[icase].welfare - (output[1].welfare - output[1].welfare_add)) / output[1].welfare_add)^(1.0 / (1.0 - p.mu)) - 1.0
-            changes[ii, 2] = output[icase].avg_income / output[1].avg_income - 1.0
-            changes[ii, 3] = output[icase].gini_earnings / output[1].gini_earnings - 1.0
-            changes[ii, 4] = output[icase].IGE / output[1].IGE - 1.0
-            changes[ii, 5] = output[icase].meanL / output[1].meanL - 1.0
-            changes[ii, 6] = output[icase].corr_lepub_lz - output[1].corr_lepub_lz
+            changes[icase, 1] = ((output[icase].welfare - (output[1].welfare - output[1].welfare_add)) / output[1].welfare_add)^(1.0 / (1.0 - p.mu)) - 1.0
+            changes[icase, 2] = output[icase].avg_income / output[1].avg_income - 1.0
+            changes[icase, 3] = output[icase].gini_earnings / output[1].gini_earnings - 1.0
+            changes[icase, 4] = output[icase].IGE / output[1].IGE - 1.0
+            changes[icase, 5] = output[icase].meanL / output[1].meanL - 1.0
+            changes[icase, 6] = output[icase].corr_lepub_lz - output[1].corr_lepub_lz
+            changes[icase, 7] = output[icase].ru_share - output[1].ru_share
+            changes[icase, 8] = wel_ru[1]
+            changes[icase, 9] = wel_ru[2]
+            changes[icase, 10] = output[icase].ell_eq / output[1].ell_eq - 1.0
+            changes[icase, 11] = output[icase].validation
         end
-        changes[ii, :] = changes[ii, :] * 100.0
-        ii += 1
+        changes[icase, :] = changes[icase, :] * 100.0
     end
+
+
+    # plt1 = surface(a, p.lz, wel_ru_az[1, :, :];
+    # xlabel = L"\ell_z", ylabel = L"a", zlabel = "weighted avg welfare gain",
+    # title = "ii = 1 or 2", camera = (45, 30), colorbar = true)
+
+    if icase > 1
+        x = p.lz
+        y = a
+        Z12 = wel_ru_az[1, :, :]                 # (NZ, NA)
+        Z34 = wel_ru_az[2, :, :]
+        Z = wel_az
+        # Plots の heatmap(x, y, Z) は Z のサイズが (length(y), length(x)) なので転置する
+        Z12p = permutedims(Z12, (2, 1))          # (NA, NZ)
+        Z34p = permutedims(Z34, (2, 1))
+        Zp = permutedims(Z, (2, 1))
+
+        plt1 = heatmap(x, y, Z12p; xlabel="log ability", ylabel="assets", right_margin = 10mm)
+        savefig(plt1, "figures/welfare_heatmap_rr_ru_$(icase).png")
+
+        plt2 = heatmap(x, y, Z34p; xlabel="log ability", ylabel="assets", right_margin = 10mm)
+        savefig(plt2, "figures/welfare_heatmap_ua_un_$(icase).png")
+
+plt3 = heatmap(x, y, Zp;
+    xlabel = "log ability",
+    ylabel = "assets",
+    right_margin = 10mm
+)
+savefig(plt3, "figures/welfare_heatmap_$(icase).png")
+    end
+
 end
 
+
+
 # Labels and column names
-row_labels = ["Welfare (CEV %)", "GDP (%)", "gini earnings (%)", "IGE (%)", "Human capital (%)", "corr log educ, log z (ppt)"]
-col_labels = ["Benchmark", "phi_a = 0.09"]
+row_labels = ["Welfare (CEV %)", "GDP (%)", "gini earnings (%)", "IGE (%)", 
+"Human capital (%)", "corr log educ, log z (ppt)", "ru share (ppt)", 
+"Welfare r (CEV %)", "Welfare u (CEV %)", "land per capita", "validation (%, change in rural share of college with urban q, level for each case)"]
+col_labels = ["Benchmark", "phi_a=0, phi_n>0", "phi_a=phi_n=0"]
 
 # Transpose and round the matrix for DataFrame creation
 rounded_changes = round.(changes', digits=4)
@@ -1182,4 +1315,25 @@ plot!(output[1].gridk0, output[1].pplus[1, 4, :, 3, 4], color=:blue, linestyle=:
 savefig("figures/fig_sfun.pdf")
 
 
+cases = 1:3
+rr = [output[i].rr_share for i in cases]
+ru = [output[i].ru_share for i in cases]
+ua = [output[i].ua_share for i in cases]
+un = clamp.(1 .- (rr .+ ru .+ ua), 0.0, 1.0)
+
+# データ行列（行=ケース, 列=カテゴリ）
+data = hcat(rr, ru, ua, un)
+
+groupedbar(col_labels, data;
+    bar_position=:stack,
+    label=["rr" "ru" "ua" "un"],
+    xlabel="",
+    ylabel="Share",
+    ylims=(0, 1),
+    legend=:topright,
+    title="Shares by Location"
+)
+
+isdir("figures") || mkpath("figures")
+savefig("figures/share_barplot.pdf")
 

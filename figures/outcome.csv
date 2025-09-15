@@ -1,7 +1,12 @@
-variables,Benchmark,phi_a = 0.09
-Welfare (CEV %),0.0,21.213
-GDP (%),0.0,28.6196
-gini earnings (%),21.6863,-10.8789
-IGE (%),44.405,-10.2432
-Human capital (%),0.0,21.8099
-"corr log educ, log z (ppt)",3.441,-2.6666
+variables,Benchmark,"phi_a=0, phi_n>0",phi_a=phi_n=0
+Welfare (CEV %),0.0,11.6546,17.8152
+GDP (%),0.0,9.4795,16.6069
+gini earnings (%),21.5991,-3.5771,-4.5937
+IGE (%),42.2948,-5.4536,-8.5079
+Human capital (%),0.0,4.6843,8.1137
+"corr log educ, log z (ppt)",0.6101,0.1716,0.0682
+ru share (ppt),12.1443,-2.7004,-3.7786
+Welfare r (CEV %),0.0,-2.2304,-5.3181
+Welfare u (CEV %),0.0,6.9766,8.9107
+land per capita,0.0,-14.3002,-27.016
+"validation (%, change in rural share of college with urban q, level for each case)",18.6423,23.0975,11.2509

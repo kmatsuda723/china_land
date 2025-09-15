@@ -1,9 +1,9 @@
 moments,values
 beta,0.48
-zeta_rr,-4.22
-zeta_ua,-0.05
-zeta_ru,2.99
+zeta_rr,-4.83
+zeta_ua,-0.06
+zeta_ru,3.14
 sigma_e,1.83
 r_land,0.03
-w_ua,1.61
-w_un,1.9
+w_ua,1.58
+w_un,1.93
