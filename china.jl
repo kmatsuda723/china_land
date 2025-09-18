@@ -1210,8 +1210,6 @@ for icase = 1:Ncase
     wel_ru_az = num_ru_az ./ max.(den_ru_az, 0.0)
     wel_az = num_az ./ max.(den_az, 0.0)
 
-    display(wel_az)
-
 
 
     if icase == 1 || icase == 2 || icase == 3
